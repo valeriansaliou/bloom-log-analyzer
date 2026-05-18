@@ -1,6 +1,6 @@
-//! Heaviest Routes: top routes by call count, grouped per HTTP method.
+//! Most Called Routes: top routes by call count, grouped per HTTP method.
 
-use crate::analysis::{Analysis, AnalysisOutput, DEFAULT_TOP_N};
+use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
 use crate::log::ParsedLog;
 use crate::util::{fmt_count, fmt_pct};
 
@@ -10,15 +10,13 @@ pub struct HeaviestRoutes {
 
 impl Default for HeaviestRoutes {
     fn default() -> Self {
-        Self {
-            top_n: DEFAULT_TOP_N,
-        }
+        Self { top_n: DEFAULT_TOP_N }
     }
 }
 
 impl Analysis for HeaviestRoutes {
     fn name(&self) -> &'static str {
-        "Heaviest Routes (most called, per method)"
+        "Most Called Routes (per method)"
     }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
@@ -31,26 +29,37 @@ impl Analysis for HeaviestRoutes {
 
         let rows = entries
             .into_iter()
-            .enumerate()
-            .map(|(i, (key, count))| {
-                vec![
-                    (i + 1).to_string(),
-                    key.method.clone(),
-                    key.url.clone(),
-                    fmt_count(*count),
-                    fmt_pct(*count, total),
-                ]
+            .map(|(key, count)| {
+                let pct_scaled = (*count as f64 / total.max(1) as f64 * 1_000_000.0) as u64;
+                SortableRow {
+                    cells: vec![
+                        key.method.clone(),
+                        key.url.clone(),
+                        fmt_count(*count),
+                        fmt_pct(*count, total),
+                    ],
+                    sort_keys: vec![
+                        None,                   // method
+                        None,                   // route
+                        Some(*count as u64),    // calls
+                        Some(pct_scaled),       // share
+                    ],
+                }
             })
             .collect();
 
-        AnalysisOutput::Table {
-            title: format!("Top {shown} Heaviest Routes"),
-            columns: ["#", "Method", "Route", "Calls", "Share"]
+        AnalysisOutput::SortableTable {
+            title: format!("Top {shown} Most Called Routes"),
+            preamble: None,
+            chart_data: None,
+            chart_meta: None,
+            columns: ["method", "route", "calls", "share"]
                 .iter()
-                .map(|s| (*s).to_string())
+                .map(|s| s.to_string())
                 .collect(),
+            sortable: vec![2, 3],
             rows,
-            summary: Some(format!("Total requests analyzed: {total}")),
+            summary: Some(format!("Total requests analyzed: {}", fmt_count(total))),
         }
     }
 }
@@ -67,9 +76,10 @@ mod tests {
         log.route_counts.insert(RouteKey::new("GET", "/a"), 5);
         log.route_counts.insert(RouteKey::new("POST", "/b"), 1);
 
-        let AnalysisOutput::Table { rows, .. } = HeaviestRoutes::default().run(&log) else { panic!("expected Table") };
-        assert_eq!(rows[0][1], "GET");
-        assert_eq!(rows[0][2], "/a");
-        assert_eq!(rows[1][1], "POST");
+        let AnalysisOutput::SortableTable { rows, .. } = HeaviestRoutes::default().run(&log)
+        else { panic!("expected SortableTable") };
+        assert_eq!(rows[0].cells[0], "GET");
+        assert_eq!(rows[0].cells[1], "/a");
+        assert_eq!(rows[1].cells[0], "POST");
     }
 }

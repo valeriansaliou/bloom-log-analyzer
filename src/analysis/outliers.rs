@@ -24,6 +24,15 @@ static ID_RE: Lazy<Regex> = Lazy::new(|| {
     .expect("ID_RE valid")
 });
 
+static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
+        .expect("EMAIL_RE valid")
+});
+
+static LONG_NUMBER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE valid")
+});
+
 static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE valid")
 });
@@ -40,7 +49,7 @@ const LARGE_HEADER_THRESHOLD: usize = 2_000;
 /// Cookie headers are legitimately large; only flag above this limit.
 const LARGE_COOKIE_THRESHOLD: usize = 8_000;
 /// Query-string length threshold for LargeQueryString (chars).
-const LARGE_QUERY_THRESHOLD: usize = 200;
+const LARGE_QUERY_THRESHOLD: usize = 512;
 /// Max URL chars shown in navigation list labels.
 const LABEL_URL_MAX: usize = 55;
 
@@ -53,7 +62,7 @@ pub struct OutlierRequests;
 
 impl Analysis for OutlierRequests {
     fn name(&self) -> &'static str {
-        "Outlier Requests (sub-menu)"
+        "Outlier Requests"
     }
 
     fn run(&self, _log: &ParsedLog) -> AnalysisOutput {
@@ -561,7 +570,10 @@ fn outlier_threshold(log: &ParsedLog) -> usize {
 }
 
 fn normalize(url: &str) -> String {
-    let s = ID_RE.replace_all(url, ":any_id").into_owned();
+    let after_ids = ID_RE.replace_all(url, ":any_id");
+    let after_emails = EMAIL_RE.replace_all(&after_ids, ":any_id");
+    let after_numbers = LONG_NUMBER_RE.replace_all(&after_emails, ":any_id");
+    let s = after_numbers.into_owned();
     match s.find('?') {
         Some(pos) => s[..pos].to_string(),
         None => s,

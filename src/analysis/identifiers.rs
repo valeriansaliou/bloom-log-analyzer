@@ -1,6 +1,7 @@
-//! Heaviest Identifiers: top UUID / `prefix_UUID` values seen across all URLs.
+//! Most Seen Tenant Identifiers: top UUID / `prefix_UUID` / email / long-number
+//! values seen across all URLs.
 
-use crate::analysis::{Analysis, AnalysisOutput, DEFAULT_TOP_N};
+use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
 use crate::log::ParsedLog;
 use crate::util::{fmt_count, fmt_pct};
 
@@ -10,15 +11,13 @@ pub struct HeaviestIdentifiers {
 
 impl Default for HeaviestIdentifiers {
     fn default() -> Self {
-        Self {
-            top_n: DEFAULT_TOP_N,
-        }
+        Self { top_n: DEFAULT_TOP_N }
     }
 }
 
 impl Analysis for HeaviestIdentifiers {
     fn name(&self) -> &'static str {
-        "Heaviest Identifiers (most seen in URLs)"
+        "Most Seen Tenant Identifiers"
     }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
@@ -32,26 +31,38 @@ impl Analysis for HeaviestIdentifiers {
 
         let rows = entries
             .into_iter()
-            .enumerate()
-            .map(|(i, (id, count))| {
-                vec![
-                    (i + 1).to_string(),
-                    id.clone(),
-                    fmt_count(*count),
-                    fmt_pct(*count, total),
-                ]
+            .map(|(id, count)| {
+                let pct_scaled = (*count as f64 / total.max(1) as f64 * 1_000_000.0) as u64;
+                SortableRow {
+                    cells: vec![
+                        id.clone(),
+                        fmt_count(*count),
+                        fmt_pct(*count, total),
+                    ],
+                    sort_keys: vec![
+                        None,                   // identifier (text)
+                        Some(*count as u64),    // occurrences
+                        Some(pct_scaled),       // share
+                    ],
+                }
             })
             .collect();
 
-        AnalysisOutput::Table {
-            title: format!("Top {shown} Heaviest Identifiers"),
-            columns: ["#", "Identifier", "Occurrences", "Share"]
+        AnalysisOutput::SortableTable {
+            title: format!("Top {shown} Most Seen Tenant Identifiers"),
+            preamble: None,
+            chart_data: None,
+            chart_meta: None,
+            columns: ["identifier", "occurrences", "share"]
                 .iter()
-                .map(|s| (*s).to_string())
+                .map(|s| s.to_string())
                 .collect(),
+            sortable: vec![1, 2],
             rows,
             summary: Some(format!(
-                "Total identifier occurrences: {total} | Unique identifiers: {unique}"
+                "Total identifier occurrences: {}  ·  Unique identifiers: {}",
+                fmt_count(total),
+                fmt_count(unique),
             )),
         }
     }
@@ -68,9 +79,10 @@ mod tests {
         log.identifier_counts.insert("beta".into(), 3);
         log.identifier_counts.insert("gamma".into(), 7);
 
-        let AnalysisOutput::Table { rows, .. } = HeaviestIdentifiers::default().run(&log) else { panic!("expected Table") };
-        assert_eq!(rows[0][1], "alpha");
-        assert_eq!(rows[1][1], "gamma");
-        assert_eq!(rows[2][1], "beta");
+        let AnalysisOutput::SortableTable { rows, .. } = HeaviestIdentifiers::default().run(&log)
+        else { panic!("expected SortableTable") };
+        assert_eq!(rows[0].cells[0], "alpha");
+        assert_eq!(rows[1].cells[0], "gamma");
+        assert_eq!(rows[2].cells[0], "beta");
     }
 }

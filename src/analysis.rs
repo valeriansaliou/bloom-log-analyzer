@@ -13,6 +13,7 @@ pub mod identifiers;
 pub mod outliers;
 pub mod request_sizes;
 pub mod routes;
+pub mod timeline;
 
 use crate::log::ParsedLog;
 
@@ -35,6 +36,25 @@ pub enum AnalysisOutput {
         items: Vec<ListItem>,
         summary: Option<String>,
     },
+    /// An interactive table whose columns can be sorted by clicking their headers.
+    /// The `#` rank column is added automatically at render time.
+    SortableTable {
+        title: String,
+        /// Optional multi-line text rendered between the title and the column
+        /// header row (used e.g. for sparklines).
+        preamble: Option<String>,
+        /// Raw counts per time bucket used to render the full-screen chart when
+        /// the user clicks on the sparkline preamble.  `None` disables chart mode.
+        chart_data: Option<Vec<usize>>,
+        /// Legend metadata for the chart: `(y_axis_label, x_start_label, x_end_label)`.
+        chart_meta: Option<(String, String, String)>,
+        /// Column names (no `#`).
+        columns: Vec<String>,
+        /// Indices into `columns` that support sorting.
+        sortable: Vec<usize>,
+        rows: Vec<SortableRow>,
+        summary: Option<String>,
+    },
     /// A sub-menu of named analyses; handled by the top-level orchestration
     /// loop in `lib.rs` (not by `ui::display_output`).
     SubMenu {
@@ -49,6 +69,14 @@ pub struct ListItem {
     pub label: String,
     /// Full text shown in the pager when the item is selected.
     pub detail: String,
+}
+
+/// One row in a [`AnalysisOutput::SortableTable`].
+pub struct SortableRow {
+    /// Display cells, parallel to the table's `columns` (no leading `#` rank cell).
+    pub cells: Vec<String>,
+    /// Sort key per column — `None` for non-sortable columns, `Some(u64)` otherwise.
+    pub sort_keys: Vec<Option<u64>>,
 }
 
 /// One analysis: produces an [`AnalysisOutput`] from a [`ParsedLog`].
@@ -92,6 +120,7 @@ impl Default for Registry {
                 Box::new(routes::HeaviestRoutes::default()),
                 Box::new(identifiers::HeaviestIdentifiers::default()),
                 Box::new(request_sizes::HeaviestRequestsBySize::default()),
+                Box::new(timeline::TrafficTimeline),
                 Box::new(outliers::OutlierRequests),
             ],
         }

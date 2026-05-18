@@ -32,6 +32,20 @@ static ID_RE: Lazy<Regex> = Lazy::new(|| {
     .expect("ID_RE pattern is valid")
 });
 
+/// Email addresses in URLs.  Handles both `user@example.com` and the
+/// URL-encoded form `user%40example.com`.  Neither the local part nor the
+/// domain labels may contain `.`, `/`, or other URL separators.
+static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
+        .expect("EMAIL_RE pattern is valid")
+});
+
+/// Any run of 10+ digits is treated as an opaque identifier (timestamps,
+/// large numeric IDs, phone numbers, …).  Pure digits never span a `/`.
+static LONG_NUMBER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE pattern is valid")
+});
+
 /// First line of each log entry: `[timestamp] METHOD /url`.
 static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE pattern is valid")
@@ -205,12 +219,20 @@ fn parse_content_length(line: &[u8]) -> Option<u64> {
 }
 
 fn normalize_url(url: &str, id_counts: &mut AHashMap<String, usize>) -> String {
-    let normalized = ID_RE
-        .replace_all(url, |c: &regex::Captures| {
-            *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
-            ":any_id"
-        })
-        .into_owned();
+    // Replace UUIDs, then emails, then long numbers — all tracked as identifiers.
+    let after_ids = ID_RE.replace_all(url, |c: &regex::Captures| {
+        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
+        ":any_id"
+    });
+    let after_emails = EMAIL_RE.replace_all(&after_ids, |c: &regex::Captures| {
+        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
+        ":any_id"
+    });
+    let after_numbers = LONG_NUMBER_RE.replace_all(&after_emails, |c: &regex::Captures| {
+        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
+        ":any_id"
+    });
+    let normalized = after_numbers.into_owned();
     // Strip query string: routes differing only in query params are the same logical route.
     match normalized.find('?') {
         Some(pos) => normalized[..pos].to_string(),
@@ -254,6 +276,38 @@ mod tests {
             counts.get("session_becf8e02-f845-4336-9bcc-443aeac2183f"),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn normalizes_email_in_url() {
+        let mut counts = AHashMap::new();
+        let n = normalize_url("/v1/users/bob@example.com/profile", &mut counts);
+        assert_eq!(n, "/v1/users/:any_id/profile");
+        assert!(counts.contains_key("bob@example.com"));
+    }
+
+    #[test]
+    fn normalizes_percent_encoded_email() {
+        let mut counts = AHashMap::new();
+        let n = normalize_url("/v1/users/bob%40example.com/profile", &mut counts);
+        assert_eq!(n, "/v1/users/:any_id/profile");
+        assert!(counts.contains_key("bob%40example.com"));
+    }
+
+    #[test]
+    fn normalizes_long_number_in_url() {
+        let mut counts = AHashMap::new();
+        let n = normalize_url("/v1/phone/1234567890/verify", &mut counts);
+        assert_eq!(n, "/v1/phone/:any_id/verify");
+        assert!(counts.contains_key("1234567890"));
+    }
+
+    #[test]
+    fn does_not_normalize_short_number() {
+        let mut counts = AHashMap::new();
+        let n = normalize_url("/v1/items/123456789/get", &mut counts); // 9 digits — too short
+        assert_eq!(n, "/v1/items/123456789/get");
+        assert!(!counts.contains_key("123456789"));
     }
 
     #[test]
