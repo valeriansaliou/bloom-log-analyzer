@@ -68,7 +68,7 @@ mod tests {
         log.identifier_counts.insert("beta".into(), 3);
         log.identifier_counts.insert("gamma".into(), 7);
 
-        let AnalysisOutput::Table { rows, .. } = HeaviestIdentifiers::default().run(&log);
+        let AnalysisOutput::Table { rows, .. } = HeaviestIdentifiers::default().run(&log) else { panic!("expected Table") };
         assert_eq!(rows[0][1], "alpha");
         assert_eq!(rows[1][1], "gamma");
         assert_eq!(rows[2][1], "beta");

@@ -63,7 +63,7 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
     let data: &[u8] = &mmap;
 
     let n_threads = rayon::current_num_threads().max(1);
-    let chunks = split_into_chunks(data, n_threads);
+    let chunks = crate::util::split_into_chunks(data, n_threads);
 
     // Shared counter for live req/s display; updated atomically per chunk.
     let req_counter = AtomicUsize::new(0);
@@ -140,6 +140,7 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
     // Merge all partial maps into the final log.
     let mut log = ParsedLog {
         file_size,
+        source_path: Some(path.to_path_buf()),
         ..ParsedLog::default()
     };
     for mut partial in partial_logs {
@@ -172,32 +173,6 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
     Ok(log)
 }
 
-/// Divide `data` into up to `n` contiguous slices, each ending on a newline
-/// boundary so no log entry is split across chunks.
-fn split_into_chunks(data: &[u8], n: usize) -> Vec<&[u8]> {
-    let n = n.max(1);
-    if data.is_empty() {
-        return vec![];
-    }
-    let chunk_size = (data.len() + n - 1) / n; // ceiling division
-    let mut chunks = Vec::with_capacity(n);
-    let mut start = 0;
-    while start < data.len() {
-        let raw_end = (start + chunk_size).min(data.len());
-        let end = if raw_end >= data.len() {
-            data.len()
-        } else {
-            // Advance past the next newline so the following chunk starts cleanly.
-            data[raw_end..]
-                .iter()
-                .position(|&b| b == b'\n')
-                .map_or(data.len(), |off| raw_end + off + 1)
-        };
-        chunks.push(&data[start..end]);
-        start = end;
-    }
-    chunks
-}
 
 fn record_request(log: &mut ParsedLog, method: &str, raw_url: &str, timestamp: &str) {
     let normalized = normalize_url(raw_url, &mut log.identifier_counts);
@@ -230,12 +205,17 @@ fn parse_content_length(line: &[u8]) -> Option<u64> {
 }
 
 fn normalize_url(url: &str, id_counts: &mut AHashMap<String, usize>) -> String {
-    ID_RE
+    let normalized = ID_RE
         .replace_all(url, |c: &regex::Captures| {
             *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
             ":any_id"
         })
-        .into_owned()
+        .into_owned();
+    // Strip query string: routes differing only in query params are the same logical route.
+    match normalized.find('?') {
+        Some(pos) => normalized[..pos].to_string(),
+        None => normalized,
+    }
 }
 
 fn make_progress_bar(file_size: u64) -> ProgressBar {
@@ -320,24 +300,4 @@ mod tests {
         assert_eq!(log.last_timestamp.as_deref(), Some("2026-01-01T00:30:00Z"));
     }
 
-    #[test]
-    fn split_into_chunks_covers_all_bytes() {
-        let data = b"line1\nline2\nline3\n";
-        let chunks = split_into_chunks(data, 3);
-        let combined: Vec<u8> = chunks.iter().flat_map(|c| c.iter().copied()).collect();
-        assert_eq!(combined.as_slice(), data.as_slice());
-    }
-
-    #[test]
-    fn split_into_chunks_empty() {
-        assert!(split_into_chunks(b"", 4).is_empty());
-    }
-
-    #[test]
-    fn split_into_chunks_single_chunk_when_small() {
-        let data = b"abc\ndef\n";
-        let chunks = split_into_chunks(data, 1);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], data.as_slice());
-    }
 }

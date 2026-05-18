@@ -1,5 +1,7 @@
 //! Domain types for parsed log state.
 
+use std::path::PathBuf;
+
 use ahash::AHashMap;
 
 /// All analysis data, pre-aggregated during a single streaming parse pass.
@@ -18,6 +20,8 @@ pub struct ParsedLog {
     // --- file-level metadata set by the parser ---
     /// On-disk size of the log file in bytes.
     pub file_size: u64,
+    /// Path to the source file (used for on-demand re-scans by analyses).
+    pub source_path: Option<PathBuf>,
     /// Raw timestamp string of the earliest log entry.
     pub first_timestamp: Option<String>,
     /// Raw timestamp string of the latest log entry.

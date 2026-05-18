@@ -47,6 +47,32 @@ pub fn fmt_bytes(n: u64) -> String {
     }
 }
 
+/// Divide `data` into up to `n` contiguous byte slices, each ending on a `\n`
+/// boundary so no log line is split across chunks.
+pub(crate) fn split_into_chunks(data: &[u8], n: usize) -> Vec<&[u8]> {
+    let n = n.max(1);
+    if data.is_empty() {
+        return vec![];
+    }
+    let chunk_size = (data.len() + n - 1) / n;
+    let mut chunks = Vec::with_capacity(n);
+    let mut start = 0;
+    while start < data.len() {
+        let raw_end = (start + chunk_size).min(data.len());
+        let end = if raw_end >= data.len() {
+            data.len()
+        } else {
+            data[raw_end..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(data.len(), |off| raw_end + off + 1)
+        };
+        chunks.push(&data[start..end]);
+        start = end;
+    }
+    chunks
+}
+
 /// Format `n` as a percentage of `total`, with one decimal place.
 pub fn fmt_pct(n: usize, total: usize) -> String {
     if total > 0 {
@@ -84,6 +110,27 @@ mod tests {
     #[test]
     fn truncate_zero_max() {
         assert_eq!(truncate("anything", 0), "");
+    }
+
+    #[test]
+    fn split_into_chunks_covers_all_bytes() {
+        let data = b"line1\nline2\nline3\n";
+        let chunks = split_into_chunks(data, 3);
+        let combined: Vec<u8> = chunks.iter().flat_map(|c| c.iter().copied()).collect();
+        assert_eq!(combined.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn split_into_chunks_empty() {
+        assert!(split_into_chunks(b"", 4).is_empty());
+    }
+
+    #[test]
+    fn split_into_chunks_single_chunk_when_small() {
+        let data = b"abc\ndef\n";
+        let chunks = split_into_chunks(data, 1);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], data.as_slice());
     }
 
     #[test]

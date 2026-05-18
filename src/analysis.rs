@@ -10,6 +10,8 @@
 //! 3. Push it onto the vec in [`Registry::default`].
 
 pub mod identifiers;
+pub mod outliers;
+pub mod request_sizes;
 pub mod routes;
 
 use crate::log::ParsedLog;
@@ -19,16 +21,34 @@ use crate::log::ParsedLog;
 pub const DEFAULT_TOP_N: usize = 1_000;
 
 /// Output of an analysis run.
-///
-/// Currently only a `Table` variant; future variants (charts, time-series,
-/// JSON export, …) can be added without breaking the trait.
 pub enum AnalysisOutput {
+    /// Flat table rendered in a scrollable pager.
     Table {
         title: String,
         columns: Vec<String>,
         rows: Vec<Vec<String>>,
         summary: Option<String>,
     },
+    /// Navigable list where each item can be "opened" to show a detail view.
+    SelectableList {
+        title: String,
+        items: Vec<ListItem>,
+        summary: Option<String>,
+    },
+    /// A sub-menu of named analyses; handled by the top-level orchestration
+    /// loop in `lib.rs` (not by `ui::display_output`).
+    SubMenu {
+        title: String,
+        options: Vec<(String, Box<dyn Analysis>)>,
+    },
+}
+
+/// One row in a [`AnalysisOutput::SelectableList`].
+pub struct ListItem {
+    /// Short line shown in the navigation list.
+    pub label: String,
+    /// Full text shown in the pager when the item is selected.
+    pub detail: String,
 }
 
 /// One analysis: produces an [`AnalysisOutput`] from a [`ParsedLog`].
@@ -71,6 +91,8 @@ impl Default for Registry {
             analyses: vec![
                 Box::new(routes::HeaviestRoutes::default()),
                 Box::new(identifiers::HeaviestIdentifiers::default()),
+                Box::new(request_sizes::HeaviestRequestsBySize::default()),
+                Box::new(outliers::OutlierRequests),
             ],
         }
     }

@@ -67,7 +67,7 @@ mod tests {
         log.route_counts.insert(RouteKey::new("GET", "/a"), 5);
         log.route_counts.insert(RouteKey::new("POST", "/b"), 1);
 
-        let AnalysisOutput::Table { rows, .. } = HeaviestRoutes::default().run(&log);
+        let AnalysisOutput::Table { rows, .. } = HeaviestRoutes::default().run(&log) else { panic!("expected Table") };
         assert_eq!(rows[0][1], "GET");
         assert_eq!(rows[0][2], "/a");
         assert_eq!(rows[1][1], "POST");

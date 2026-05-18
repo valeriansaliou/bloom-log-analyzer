@@ -17,10 +17,30 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use dialoguer::{theme::ColorfulTheme, Select};
 
-use crate::analysis::Registry;
+use crate::analysis::{AnalysisOutput, Registry};
 use crate::log::ParsedLog;
 use crate::ui::Selection;
+
+// bum gun / bidet sprayer — the AnalGun
+const LOGO: &str = r"
+               _
+              / \
+             |   |
+             |   |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{ ~~ }
+             | * |                                   ~~~~
+             |   |
+              \_/
+               |
+             ./ \.
+            /  |  \
+           /   |   \    The Bloom Analytics Gun.
+          /    |    \   Uncovering patterns in your Bloom logs.
+         '-----+-----'
+               |
+               |
+";
 
 /// Top-level entry point: parse a log file, then run the interactive menu loop
 /// until the user picks "Quit".
@@ -45,21 +65,62 @@ pub fn run(log_file: &Path) -> Result<()> {
                     break;
                 }
                 last_was_interrupt = true;
-                eprintln!(
-                    "\n{}",
-                    "  Press Ctrl+C again to quit.".yellow()
-                );
+                eprintln!("\n{}", "  Press Ctrl+C again to quit.".yellow());
             }
             Selection::Analysis(idx) => {
                 last_was_interrupt = false;
                 if let Some(output) = registry.run(idx, &log) {
-                    ui::display_output(&output);
+                    dispatch_output(output, &log);
                 }
             }
         }
     }
 
     Ok(())
+}
+
+/// Route an `AnalysisOutput` to the correct display handler.
+/// `SubMenu` is handled here (needs access to `log`); everything else goes to `ui`.
+fn dispatch_output(output: AnalysisOutput, log: &ParsedLog) {
+    match output {
+        AnalysisOutput::SubMenu { title, options } => {
+            run_submenu(title, options, log);
+        }
+        other => ui::display_output(&other),
+    }
+}
+
+fn run_submenu(
+    title: String,
+    options: Vec<(String, Box<dyn crate::analysis::Analysis>)>,
+    log: &ParsedLog,
+) {
+    let names: Vec<&str> = options.iter().map(|(n, _)| n.as_str()).collect();
+    loop {
+        eprintln!();
+        eprintln!("  {}  {}", title.bold(), "· esc back".dimmed(),);
+        match Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("")
+            .items(&names)
+            .default(0)
+            .interact_opt()
+        {
+            Ok(None) | Err(_) => break,
+            Ok(Some(idx)) => {
+                let ctx = format!("{}  ›  {}", title.trim(), options[idx].0.trim());
+                let output = options[idx].1.run(log);
+                // SelectableList gets a sticky breadcrumb; everything else dispatches normally.
+                match output {
+                    AnalysisOutput::SelectableList { title: ref list_title, ref items, ref summary } => {
+                        ui::display_selectable_list_with_context(
+                            list_title, items, summary.as_deref(), &ctx,
+                        );
+                    }
+                    other => dispatch_output(other, log),
+                }
+            }
+        }
+    }
 }
 
 fn print_summary(log: &ParsedLog, log_file: &Path) {
@@ -82,14 +143,10 @@ fn print_summary(log: &ParsedLog, log_file: &Path) {
     const W: usize = 13;
     // Helper: dimmed label + bold value on one row.
     let row = |label: &str, value: &str| {
-        eprintln!(
-            "  {}  {}",
-            format!("{label:<W$}").dimmed(),
-            value.bold()
-        );
+        eprintln!("  {}  {}", format!("{label:<W$}").dimmed(), value.bold());
     };
 
-    eprintln!();
+    eprintln!("{}", LOGO.cyan());
     eprintln!(
         "  {}  {}  {}",
         "analgun".bold().cyan(),
