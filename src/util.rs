@@ -31,6 +31,22 @@ pub fn truncate(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Format a byte count as a human-readable size (SI units, one decimal place).
+pub fn fmt_bytes(n: u64) -> String {
+    const GB: u64 = 1_000_000_000;
+    const MB: u64 = 1_000_000;
+    const KB: u64 = 1_000;
+    if n >= GB {
+        format!("{:.1} GB", n as f64 / GB as f64)
+    } else if n >= MB {
+        format!("{:.1} MB", n as f64 / MB as f64)
+    } else if n >= KB {
+        format!("{:.1} KB", n as f64 / KB as f64)
+    } else {
+        format!("{} B", n)
+    }
+}
+
 /// Format `n` as a percentage of `total`, with one decimal place.
 pub fn fmt_pct(n: usize, total: usize) -> String {
     if total > 0 {

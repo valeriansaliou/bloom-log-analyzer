@@ -22,20 +22,24 @@ Results are shown in a paged ASCII table (arrow keys to scroll, `q` to exit).
 
 ## Architecture
 
-### Memory model — streaming, single-pass
+### Memory model — parallel, zero-copy
 
-Logs can be multiple gigabytes. The parser uses `BufReader` line-by-line, so the file is **never fully in memory**. Aggregations are built incrementally during a single pass:
+Logs can be multiple gigabytes. The parser memory-maps the file (zero-copy, OS-managed paging), splits it into CPU-aligned chunks, and processes each chunk on a separate rayon thread. Per-thread `ParsedLog` maps are merged after all threads complete.
 
 | In-memory structure | Bounded by |
 |---|---|
 | `ParsedLog.route_counts` | unique routes (typically hundreds) |
 | `ParsedLog.identifier_counts` | unique identifiers (UUIDs × ~70 bytes each) |
 
-**No per-request data is retained.** When a new analysis needs an additional dimension (user agents, IPs, time buckets, status codes…), add a `HashMap` field to `ParsedLog` in `src/log.rs` and one line of collection in `parser::record_request`.
+**No per-request data is retained.** When a new analysis needs an additional dimension (user agents, IPs, time buckets, status codes…), add an `AHashMap` field to `ParsedLog` in `src/log.rs` and one line of collection in `parser::record_request`.
 
 ### Parser fast path
 
-Only the first line of each entry (`[timestamp] METHOD /url`) is parsed. Headers, body lines, blank lines, and the `---` separator are skipped at near-zero cost — the regex match fails on the first character when the line doesn't start with `[`. There is no block-buffer / multi-line state machine.
+Only the first line of each entry (`[timestamp] METHOD /url`) is parsed. All other lines are rejected with a single byte check (`line[0] == b'['`) before UTF-8 validation or regex matching are attempted — near-zero cost for 90%+ of lines. There is no per-line `String` allocation; the file is iterated as byte slices over the mmap. There is no block-buffer / multi-line state machine.
+
+### Parallel chunk splitting (`parser::split_into_chunks`)
+
+`data` is divided into `rayon::current_num_threads()` slices of roughly equal byte size. Each split point is aligned forward to the next `\n` so no log entry straddles a chunk boundary. Each thread builds its own `ParsedLog` (no locking during parse); maps are merged in O(unique_routes + unique_ids) after collection.
 
 ### Library + binary split
 
@@ -121,15 +125,19 @@ Both are replaced with `:any_id` in the normalized URL. The raw identifier strin
 
 | Crate | Purpose |
 |---|---|
+| `ahash` | Non-cryptographic hashing for `ParsedLog` maps (2-5× faster than SipHash) |
+| `anyhow` | Error context propagation |
 | `clap` | CLI argument parsing |
-| `regex` + `once_cell` | UUID detection in URLs (lazy-compiled regex) |
+| `colored` | ANSI color codes |
+| `comfy-table` | ASCII table rendering |
+| `crossterm` | Terminal width detection |
 | `dialoguer` | Interactive analysis menu |
 | `indicatif` | Progress bar during parsing |
+| `memmap2` | Read-only memory-mapped file access (zero-copy) |
 | `minus` | `less`-style pager for results |
-| `comfy-table` | ASCII table rendering |
-| `colored` | ANSI color codes |
-| `crossterm` | Terminal width detection |
-| `anyhow` | Error context propagation |
+| `once_cell` | Lazy-compiled static regexes |
+| `rayon` | Data-parallel chunk processing across all CPU cores |
+| `regex` | UUID detection in URLs |
 
 ## Tests
 
@@ -150,8 +158,10 @@ Unit tests live alongside their modules under `#[cfg(test)] mod tests`. There ar
 
 ## Performance characteristics
 
-- **Parse throughput**: dominated by line decoding from `BufReader` (UTF-8 validation) plus one regex match per line. The regex bails on the first character for non-matching lines, so headers/body/blank lines are essentially free.
-- **Aggregation cost**: O(1) HashMap insert per matched line; one normalized URL allocation per request; one identifier allocation per UUID seen.
+- **Parse throughput**: file is mmap'd once; each rayon worker processes its byte slice with no I/O or allocations beyond matched entry lines. Non-entry lines cost one byte comparison. Scales linearly with available CPU cores.
+- **Hash performance**: `AHashMap` (aHash algorithm) is 2-5× faster than `std::HashMap` (SipHash) for string keys. All `ParsedLog` maps use it.
+- **Aggregation cost**: O(1) AHashMap insert per matched line; one normalized URL `String` allocation per request; one identifier `String` allocation per new UUID seen.
+- **Merge cost**: O(unique_routes + unique_ids) — one pass over each partial map after all threads complete.
 - **Render cost**: O(N log N) sort over `route_counts` / `identifier_counts`, then O(top_n) row construction.
 
 ## Rust style conventions used here
@@ -163,3 +173,4 @@ Unit tests live alongside their modules under `#[cfg(test)] mod tests`. There ar
 - `&'static str` for fixed-name methods (avoids `String` allocation for menu items).
 - Magic numbers are named constants at the top of each module.
 - `#[cfg(test)] mod tests` colocated with code; no separate `tests.rs` files.
+- `AHashMap` instead of `std::collections::HashMap` everywhere — same API, faster hashing.

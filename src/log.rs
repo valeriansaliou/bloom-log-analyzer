@@ -1,19 +1,29 @@
 //! Domain types for parsed log state.
 
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 /// All analysis data, pre-aggregated during a single streaming parse pass.
 ///
 /// Memory is O(unique routes + unique identifiers), not O(total requests):
 /// no per-request data is retained. To support a new analysis dimension
-/// (user agents, IPs, time buckets, …), add a `HashMap` field here and one
+/// (user agents, IPs, time buckets, …), add an `AHashMap` field here and one
 /// line of collection in [`crate::parser`].
 #[derive(Debug, Default)]
 pub struct ParsedLog {
     pub total_requests: usize,
-    pub route_counts: HashMap<RouteKey, usize>,
+    pub route_counts: AHashMap<RouteKey, usize>,
     /// Raw identifier string → occurrence count across all URLs.
-    pub identifier_counts: HashMap<String, usize>,
+    pub identifier_counts: AHashMap<String, usize>,
+
+    // --- file-level metadata set by the parser ---
+    /// On-disk size of the log file in bytes.
+    pub file_size: u64,
+    /// Raw timestamp string of the earliest log entry.
+    pub first_timestamp: Option<String>,
+    /// Raw timestamp string of the latest log entry.
+    pub last_timestamp: Option<String>,
+    /// Sum of all `content-length` header values seen across all requests.
+    pub total_bytes_in: u64,
 }
 
 /// Identity of a route: HTTP method paired with a normalized URL.

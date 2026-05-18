@@ -9,13 +9,15 @@ name = "analgun"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-regex = "1"
-once_cell = "1"
-dialoguer = "0.11"
-comfy-table = "7"
-colored = "2"
+ahash = "0.8"
 anyhow = "1"
-indicatif = "0.17"
-minus = { version = "5", features = ["static_output"] }
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+comfy-table = "7"
 crossterm = "0.29"
+dialoguer = "0.11"
+indicatif = "0.17"
+memmap2 = "0.9"
+once_cell = "1"
+rayon = "1"
+regex = "1"

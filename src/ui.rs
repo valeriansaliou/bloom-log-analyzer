@@ -1,10 +1,18 @@
 //! Interactive terminal UI: analysis selection menu and result rendering.
 
-use std::fmt::Write as _;
+use std::fmt::Write as _; // writeln! on String
+use std::io::Write; // stdout.flush()
 
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    execute, queue,
+    style::{Attribute as StyleAttr, Print, SetAttribute},
+    terminal::{self, ClearType},
+};
 use dialoguer::{theme::ColorfulTheme, Select};
 
 use crate::analysis::{AnalysisOutput, Registry};
@@ -30,8 +38,13 @@ pub fn select_analysis(registry: &Registry) -> Result<Selection> {
     items.push("Quit");
 
     eprintln!();
+    eprintln!(
+        "  {}  {}",
+        "Available analyses".bold(),
+        "· esc or ctrl+c to quit".dimmed(),
+    );
     let result = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select analysis  (esc/ctrl+c to quit)")
+        .with_prompt("")
         .items(&items)
         .default(0)
         .interact_opt();
@@ -49,23 +62,117 @@ pub fn select_analysis(registry: &Registry) -> Result<Selection> {
     }
 }
 
-/// Render an analysis output in a `less`-style pager (arrow-key navigation).
+/// Render an analysis output in a full-screen pager.
+///
+/// Returns normally on q / ESC / CTRL+C — never exits the process.
 pub fn display_output(output: &AnalysisOutput) {
-    // Force ANSI codes into the string — `minus` renders them in the pager, but
-    // `colored` would strip them when writing to a String (no TTY detected on
-    // the build path).
     colored::control::set_override(true);
     let content = format_output(output);
     colored::control::unset_override();
 
-    let mut pager = minus::Pager::new();
-    let _ = pager.set_prompt("analgun  │  ↑/↓ row   fn+↑/↓ page   esc back");
-    let _ = std::fmt::Write::write_str(&mut pager, &content);
-    let _ = minus::page_all(pager);
+    if let Err(e) = run_pager(&content) {
+        eprintln!("pager error: {e}");
+        print!("{content}");
+    }
 }
 
-/// Build the full rendered string for `output` (used by [`display_output`];
-/// kept separate so it can be unit-tested without invoking the pager).
+// ---------------------------------------------------------------------------
+// Pager
+// ---------------------------------------------------------------------------
+
+fn run_pager(content: &str) -> Result<()> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut stdout = std::io::stdout();
+
+    terminal::enable_raw_mode()?;
+    execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide)?;
+
+    let result = pager_loop(&lines, &mut stdout);
+
+    // Always restore the terminal, even on error.
+    let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+    let _ = terminal::disable_raw_mode();
+
+    result
+}
+
+fn pager_loop(lines: &[&str], stdout: &mut impl Write) -> Result<()> {
+    let mut scroll: usize = 0;
+
+    loop {
+        let (cols, rows) = terminal::size().unwrap_or((120, 40));
+        let rows = rows as usize;
+        let cols = cols as usize;
+        let content_rows = rows.saturating_sub(1); // bottom row reserved for footer
+        let max_scroll = lines.len().saturating_sub(content_rows);
+
+        // Render content lines.
+        queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
+        for i in 0..content_rows {
+            if let Some(line) = lines.get(scroll + i) {
+                queue!(stdout, Print(line), Print("\r\n"))?;
+            }
+        }
+
+        // Render footer: reversed status bar spanning the full width.
+        let pct = if lines.len() <= content_rows {
+            100usize
+        } else {
+            ((scroll + content_rows) * 100 / lines.len()).min(100)
+        };
+        let footer_text = format!(
+            " analgun  │  ↑/↓ row   fn+↑/↓ page   esc/q back   {pct}%"
+        );
+        let footer = format!("{:<width$}", footer_text, width = cols);
+        queue!(
+            stdout,
+            cursor::MoveTo(0, (rows - 1) as u16),
+            SetAttribute(StyleAttr::Reverse),
+            Print(&footer),
+            SetAttribute(StyleAttr::Reset),
+        )?;
+        stdout.flush()?;
+
+        // Handle input — blocks until a key or resize event arrives.
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                match (key.code, key.modifiers) {
+                    // Exit pager → return to menu.
+                    (KeyCode::Char('q'), _)
+                    | (KeyCode::Esc, _)
+                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                        scroll = scroll.saturating_sub(1);
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                        scroll = scroll.saturating_add(1).min(max_scroll);
+                    }
+                    (KeyCode::PageUp, _) => {
+                        scroll = scroll.saturating_sub(content_rows);
+                    }
+                    (KeyCode::PageDown, _) => {
+                        scroll = scroll.saturating_add(content_rows).min(max_scroll);
+                    }
+                    (KeyCode::Home, _) => scroll = 0,
+                    (KeyCode::End, _) => scroll = max_scroll,
+                    _ => {}
+                }
+            }
+            Event::Resize(_, _) => {} // just re-render on next iteration
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Table formatting
+// ---------------------------------------------------------------------------
+
+/// Build the full rendered string for `output` (kept separate so it can be
+/// unit-tested without invoking the pager).
 fn format_output(output: &AnalysisOutput) -> String {
     match output {
         AnalysisOutput::Table {
@@ -91,9 +198,8 @@ fn format_table(
     } else {
         let max_cell = max_cell_chars(columns.len());
         let mut table = Table::new();
-        // Disabled arrangement: each column is exactly as wide as its widest
-        // cell. We pre-truncate cell content to fit terminal width so the table
-        // never overflows.
+        // Disabled arrangement: columns are exactly as wide as their widest
+        // cell. We pre-truncate content to fit terminal width.
         table.set_content_arrangement(ContentArrangement::Disabled);
         table.set_header(columns.iter().map(header_cell).collect::<Vec<_>>());
         for row in rows {
@@ -121,7 +227,7 @@ fn header_cell(label: &String) -> Cell {
 /// Maximum characters per cell, sized to keep the rendered table within the
 /// current terminal width.
 fn max_cell_chars(num_cols: usize) -> usize {
-    let term_width = crossterm::terminal::size()
+    let term_width = terminal::size()
         .map(|(w, _)| w as usize)
         .unwrap_or(FALLBACK_TERM_WIDTH);
     let cols = num_cols.max(1);
