@@ -123,7 +123,10 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
         })
         .collect();
 
-    // Merge all partial maps into the final log.
+    // Merge all per-thread partial maps into the final log.  This is the
+    // only point where threads' results combine — during scanning each thread
+    // is fully independent, which is what makes the parallel parse safe and
+    // lock-free.
     let mut log = ParsedLog {
         file_size,
         source_path: Some(path.to_path_buf()),
@@ -132,13 +135,22 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
     for mut partial in partial_logs {
         log.total_requests += partial.total_requests;
         log.total_bytes_in += partial.total_bytes_in;
+
+        // Route + identifier counts: O(unique keys) sum into the global map.
+        // Chunks are unordered, but addition is commutative — total counts are
+        // identical regardless of merge order.
         for (key, count) in partial.route_counts {
             *log.route_counts.entry(key).or_insert(0) += count;
         }
         for (id, count) in partial.identifier_counts {
             *log.identifier_counts.entry(id).or_insert(0) += count;
         }
-        // Keep the earliest first_timestamp and latest last_timestamp.
+
+        // Timestamps: chunks see only their own slice of the file, so their
+        // first/last are local to that chunk.  Across chunks, take the
+        // lexicographically smallest `first_timestamp` and largest
+        // `last_timestamp` — valid because we use ISO 8601 UTC, where string
+        // order matches chronological order.
         if let Some(ts) = partial.first_timestamp.take() {
             match &log.first_timestamp {
                 None => log.first_timestamp = Some(ts),
