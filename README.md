@@ -53,6 +53,8 @@ Then, you'll enter a menu where you can pick which analysis report to see. Some 
 
 Reports are typically shown in a table format. You can click on the table headers to sort in ascending or descending order, if the column value is of numerical form.
 
+Identifiers (such as UUIDs) or page numbers contained in request URLs are all replaced with `:any_id` so that requests can be grouped by their HTTP routes.
+
 To navigate between the menu or results, you can use the following keyboard shortcuts:
 
 - ↕️ **Navigate up/down**: `ARROW UP` / `ARROW DOWN`
