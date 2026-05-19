@@ -183,8 +183,8 @@ fn run_loop(
                             detail: rows[idx].detail.clone().unwrap_or_default(),
                         })
                         .collect();
-                    let returned =
-                        run_detail_viewer_nested(&detail_items, state.cursor).unwrap_or(state.cursor);
+                    let returned = run_detail_viewer_nested(&detail_items, state.cursor)
+                        .unwrap_or(state.cursor);
                     state.cursor = returned.min(rows.len().saturating_sub(1));
                     scroll_to_cursor(state, data_height, max_scroll);
                 } else if handle_key_event(
@@ -491,7 +491,10 @@ fn render_frame(
     let sort_hint = if sortable.is_empty() {
         String::new()
     } else {
-        format!("  click header to sort  │  {sort_name} {}  │", if state.sort_asc { "▲" } else { "▼" })
+        format!(
+            "  click header to sort  │  {sort_name} {}  │",
+            if state.sort_asc { "▲" } else { "▼" }
+        )
     };
     let footer_text = format!(
         " bloom-log-analyzer  │{sort_hint}{inspect_hint}  ↑/↓ navigate  q/esc back  {pct}%",
