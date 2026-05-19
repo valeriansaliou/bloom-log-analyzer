@@ -3,8 +3,6 @@ Bloom Log Analyzer
 
 **Log analysis CLI for Bloom, the REST API caching middleware. It helps you uncover patterns in your Bloom logs.**
 
-Bloom Log Analyzer is a CLI for [Bloom](https://github.com/valeriansaliou/bloom).
-
 👉 **Not using Bloom?** [Check out Bloom here](https://github.com/valeriansaliou/bloom).
 
 A very large request log file from a Bloom server can be analyzed using all your CPU cores in a few seconds (2M requests / second analyzed on a M4 Pro CPU), with low to no memory impact. Traffic pattern reports can then be visualized from within your terminal.
