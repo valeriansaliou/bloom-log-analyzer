@@ -40,11 +40,11 @@ As soon as you run `bloom-log-analyzer` on a Bloom requests log file, a quick an
 
 Then, you'll enter a menu where you can pick which analysis report to see. Some reports require further log file analysis to be ran, that takes a bit more time.
 
-- **Most Called Routes** (per method)
-- **Most Seen URL Identifiers** (largest tenants)
-- **Heaviest Requests** (headers + body byte size)
-- **Traffic Timeline** (burst detection)
-- **Outlier Requests** (weird requests)
+- ✅ **Most Called Routes** (per method)
+- ✅ **Most Seen URL Identifiers** (largest tenants)
+- ✅ **Heaviest Requests** (headers + body byte size)
+- ✅ **Traffic Timeline** (burst detection)
+- ✅ **Outlier Requests** (weird requests)
   - Large Request       _content-length > 100 KB_
   - Large Header        _single header line > 2 KB_
   - Large Query String  _query part > 512 chars_
@@ -55,12 +55,14 @@ Reports are typically shown in a table format. You can click on the table header
 
 To navigate between the menu or results, you can use the following keyboard shortcuts:
 
-- **Navigate up/down**: `ARROW UP` / `ARROW DOWN`
-- **Inspect original request**: `ENTER`
-- **Go back**: `Q` / `ESCAPE`
+- ↕️ **Navigate up/down**: `ARROW UP` / `ARROW DOWN`
+- ↩️ **Inspect original request**: `ENTER`
+- ⏪ **Go back**: `Q` / `ESCAPE`
 
 ## Disclaimer
 
 Bloom Log Analyzer has been built entirely using Claude Code. Whilst Bloom is hand-crafted (and will remain so), this CLI tool is solely maintained using agentic coding.
 
 If you want to add a new feature, please do not modify with the source code by hand. You can open an issue and ask for the desired feature, provide some sample log file from your Bloom server, and I will ask Claude Code to implement it for you on my end.
+
+To keep things simple, there are no releases. The latest stable `bloom-log-analyzer` is available at `HEAD` from the Git `master` branch.

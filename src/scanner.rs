@@ -69,18 +69,30 @@ pub fn normalize_url(url: &str) -> String {
 /// `counts` (so the parser can populate `ParsedLog.identifier_counts`).
 pub fn normalize_url_counted(url: &str, counts: &mut AHashMap<String, usize>) -> String {
     let s = ID_RE.replace_all(url, |c: &regex::Captures| {
-        *counts.entry(c[0].to_string()).or_insert(0) += 1;
+        bump_count(counts, &c[0]);
         ANY_ID
     });
     let s = EMAIL_RE.replace_all(&s, |c: &regex::Captures| {
-        *counts.entry(c[0].to_string()).or_insert(0) += 1;
+        bump_count(counts, &c[0]);
         ANY_ID
     });
     let s = NUMBER_RE.replace_all(&s, |c: &regex::Captures| {
-        *counts.entry(c[0].to_string()).or_insert(0) += 1;
+        bump_count(counts, &c[0]);
         ANY_ID
     });
     strip_query(s.into_owned())
+}
+
+/// Increment the count for `key`, allocating an owned `String` only when the
+/// key is new.  Hot-identifier workloads (e.g. one session-id appearing in
+/// millions of URLs) skip the `to_string()` allocation entirely after the
+/// first sighting — a 2-lookup miss is still cheaper than 1 lookup + 1 alloc.
+fn bump_count(counts: &mut AHashMap<String, usize>, key: &str) {
+    if let Some(v) = counts.get_mut(key) {
+        *v += 1;
+    } else {
+        counts.insert(key.to_string(), 1);
+    }
 }
 
 fn strip_query(s: String) -> String {

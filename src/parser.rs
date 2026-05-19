@@ -165,10 +165,21 @@ fn record_request(log: &mut ParsedLog, method: &str, raw_url: &str, timestamp: &
         .entry(RouteKey::new(method, normalized))
         .or_insert(0) += 1;
     log.total_requests += 1;
+
     if log.first_timestamp.is_none() {
         log.first_timestamp = Some(timestamp.to_string());
     }
-    log.last_timestamp = Some(timestamp.to_string());
+
+    // last_timestamp is overwritten on every request — reuse the existing
+    // String's allocation instead of malloc/free'ing one per line.  At
+    // millions-of-requests scale this removes a per-line allocator pair.
+    match log.last_timestamp.as_mut() {
+        Some(existing) => {
+            existing.clear();
+            existing.push_str(timestamp);
+        }
+        None => log.last_timestamp = Some(timestamp.to_string()),
+    }
 }
 
 /// Parse a `content-length: <n>` header line (case-insensitive prefix).

@@ -7,34 +7,66 @@
 //! Small utility functions shared across modules.
 
 /// Format an integer with comma thousands separators: `1234567` → `"1,234,567"`.
+///
+/// Single-allocation: writes digits right-to-left into a fixed-capacity buffer,
+/// inserting `,` after every 3 digits, then returns the buffer.  Avoids the
+/// `n.to_string()` + char-by-char rebuild pattern that allocates twice.
 pub fn fmt_count(n: usize) -> String {
-    let s = n.to_string();
-    let len = s.len();
-    let mut out = String::with_capacity(len + len / 3);
-    for (i, c) in s.chars().enumerate() {
-        let from_right = len - 1 - i;
-        if i > 0 && from_right % 3 == 2 {
-            out.push(',');
+    // 20 digits covers usize::MAX (2^64 ≈ 1.8e19) plus 6 commas = 26 chars max.
+    let mut buf = [0u8; 26];
+    let mut pos = buf.len();
+    let mut n = n;
+    let mut digit_count = 0usize;
+    loop {
+        // Insert a comma every 3 digits (but not at the very front).
+        if digit_count > 0 && digit_count.is_multiple_of(3) {
+            pos -= 1;
+            buf[pos] = b',';
         }
-        out.push(c);
+        pos -= 1;
+        buf[pos] = b'0' + (n % 10) as u8;
+        n /= 10;
+        digit_count += 1;
+        if n == 0 {
+            break;
+        }
     }
-    out
+    // SAFETY: only ASCII digits and commas were written.
+    unsafe { std::str::from_utf8_unchecked(&buf[pos..]) }.to_owned()
 }
 
 /// Truncate `s` to at most `max_chars` Unicode characters, appending `…` if cut.
 /// The returned string is guaranteed to be at most `max_chars` chars wide.
+///
+/// Single-pass: walks the char iterator once, remembers the byte offset of the
+/// `(max_chars - 1)`th character, and slices `s` directly there if we then
+/// see a `max_chars`th character (meaning truncation is needed).  Only one
+/// `String` allocation in either branch.
 pub fn truncate(s: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
     }
-    let mut chars = s.chars();
-    let kept: String = (&mut chars).take(max_chars).collect();
-    if chars.next().is_some() {
-        let prefix: String = kept.chars().take(max_chars - 1).collect();
-        format!("{prefix}…")
-    } else {
-        kept
+
+    let mut cut_at: Option<usize> = None;
+    for (count, (byte_idx, _)) in s.char_indices().enumerate() {
+        // Reaching the `max_chars`th char (0-indexed `max_chars`) means s is
+        // longer than max_chars — cut at the recorded boundary and append `…`.
+        if count >= max_chars {
+            let cut = cut_at.unwrap_or(byte_idx);
+            let mut out = String::with_capacity(cut + '…'.len_utf8());
+            out.push_str(&s[..cut]);
+            out.push('…');
+            return out;
+        }
+        // The byte offset where the (max_chars - 1)th char begins is the
+        // candidate cut point.  We'd keep s[..byte_idx] (i.e. the first
+        // max_chars - 1 chars) plus a `…`, fitting in exactly max_chars chars.
+        if count + 1 == max_chars {
+            cut_at = Some(byte_idx);
+        }
     }
+    // s fits in max_chars chars — return as-is.
+    s.to_owned()
 }
 
 /// Format a byte count as a human-readable size (SI units, one decimal place).

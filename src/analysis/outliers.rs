@@ -332,14 +332,20 @@ struct ScanHit {
 }
 
 /// State for an in-progress entry being collected by the scanner.
+///
+/// Lines accumulate into a single `String` separated by `\n` instead of a
+/// `Vec<String>` + final `.join("\n")`.  For a typical 10-line entry this
+/// saves ~10 heap allocations + the join's output allocation; over thousands
+/// of candidate entries during a scan that adds up.
 struct ActiveEntry {
     timestamp: String,
     method: String,
     raw_url: String,
-    lines: Vec<String>,
+    /// Full entry text built incrementally with `push_str` — already in the
+    /// final `\n`-joined form, ready to move into `ScanHit::full_entry`.
+    full_entry: String,
     /// Non-empty once a detector decides this entry is a hit.
     reason: String,
-    bytes: usize,
     /// True until the blank line separating HTTP headers from the body.
     in_headers: bool,
 }
@@ -349,19 +355,30 @@ impl ActiveEntry {
         timestamp: String,
         method: String,
         raw_url: String,
-        first_line: String,
+        first_line: &str,
         reason: String,
     ) -> Self {
-        let bytes = first_line.len() + 1;
         Self {
             timestamp,
             method,
             raw_url,
-            lines: vec![first_line],
+            // Pre-allocate a reasonable initial buffer — typical entries are
+            // ~500 bytes (header + ~5 headers).  Growth from here is amortized.
+            full_entry: {
+                let mut s = String::with_capacity(first_line.len().max(512));
+                s.push_str(first_line);
+                s
+            },
             reason,
-            bytes,
             in_headers: true,
         }
+    }
+
+    /// Append a continuation line.  `\n` is prepended (not appended) so the
+    /// final string has no trailing newline — matches the previous `join` behavior.
+    fn push_line(&mut self, line: &str) {
+        self.full_entry.push('\n');
+        self.full_entry.push_str(line);
     }
 
     fn into_hit(self) -> ScanHit {
@@ -370,7 +387,7 @@ impl ActiveEntry {
             method: self.method,
             raw_url: self.raw_url,
             hit_reason: self.reason,
-            full_entry: self.lines.join("\n"),
+            full_entry: self.full_entry,
         }
     }
 }
@@ -438,9 +455,8 @@ fn rescan_generic(
                 entry.in_headers = false;
             }
             if let Ok(s) = std::str::from_utf8(line_bytes) {
-                entry.bytes += s.len() + 1;
                 line_update(s, entry.in_headers, &mut entry.reason);
-                entry.lines.push(s.to_string());
+                entry.push_line(s);
             }
         } else if is_entry && hits.len() < max_hits {
             // ── Scanning: test entry header ──────────────────────────────
@@ -451,7 +467,7 @@ fn rescan_generic(
                             caps[1].to_string(),
                             caps[2].to_string(),
                             caps[3].to_string(),
-                            s.to_string(),
+                            s,
                             initial_reason,
                         ));
                     }
@@ -486,14 +502,16 @@ fn rescan_rare_url(
     let mmap = unsafe { Mmap::map(&file)? };
     let data: &[u8] = &mmap;
 
-    /// State for an in-progress rare-URL entry.
+    /// State for an in-progress rare-URL entry.  Like [`ActiveEntry`] above,
+    /// entry text accumulates into a single `String` to avoid per-line
+    /// `Vec<String>` allocations and a final `join`.
     struct ActiveRareEntry {
         timestamp: String,
         method: String,
         raw_url: String,
         normalized_url: String,
         route_total: usize,
-        lines: Vec<String>,
+        full_entry: String,
     }
 
     let mut hits: Vec<ScanHit> = Vec::new();
@@ -513,14 +531,13 @@ fn rescan_rare_url(
             fmt_count(total_requests),
             share,
         );
-        let full_entry = e.lines.join("\n");
-        *done_bytes += full_entry.len();
+        *done_bytes += e.full_entry.len();
         ScanHit {
             timestamp: e.timestamp,
             method: e.method,
             raw_url: e.raw_url,
             hit_reason,
-            full_entry,
+            full_entry: e.full_entry,
         }
     };
 
@@ -546,7 +563,8 @@ fn rescan_rare_url(
 
         if let Some(entry) = active.as_mut() {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
-                entry.lines.push(s.to_string());
+                entry.full_entry.push('\n');
+                entry.full_entry.push_str(s);
             }
         } else if is_entry && hits.len() < MAX_HITS {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
@@ -556,17 +574,22 @@ fn rescan_rare_url(
                     let normalized = normalize_url(raw_url);
                     let key = RouteKey::new(method, &normalized);
                     if let Some(&route_total) = outlier_keys.get(&key) {
+                        // Per-route cap prevents one chatty rare route from
+                        // monopolizing the hit list — we want examples across
+                        // many rare routes, not 1,000 hits from the same one.
                         let route_id = format!("{method} {normalized}");
                         let cnt = per_route.entry(route_id).or_insert(0);
                         if *cnt < MAX_EXAMPLES_PER_ROUTE {
                             *cnt += 1;
+                            let mut full_entry = String::with_capacity(s.len().max(512));
+                            full_entry.push_str(s);
                             active = Some(ActiveRareEntry {
                                 timestamp: caps[1].to_string(),
                                 method: method.to_string(),
                                 raw_url: raw_url.to_string(),
                                 normalized_url: normalized,
                                 route_total,
-                                lines: vec![s.to_string()],
+                                full_entry,
                             });
                         }
                     }
