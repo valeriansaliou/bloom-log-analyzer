@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Small utility functions shared across modules.
 
 /// Format an integer with comma thousands separators: `1234567` → `"1,234,567"`.

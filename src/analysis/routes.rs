@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Most Called Routes: top routes by call count, grouped per HTTP method.
 
 use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
@@ -46,6 +52,7 @@ impl Analysis for HeaviestRoutes {
                         Some(*count as u64), // calls
                         Some(pct_scaled),    // share
                     ],
+                    detail: None,
                 }
             })
             .collect();

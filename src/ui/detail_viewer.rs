@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Multi-item detail viewer: shows one [`ListItem`] at a time, with up/down
 //! navigation between adjacent items.
 
@@ -17,6 +23,9 @@ use crate::analysis::ListItem;
 /// Open a full-screen viewer starting at `start_idx`.  Returns the index of
 /// the last-viewed item so the calling list can restore the cursor position.
 ///
+/// Manages its own terminal state (raw mode + alternate screen).  Use
+/// [`run_detail_viewer_nested`] when the caller already owns the terminal.
+///
 /// Key bindings:
 /// - `↑` / `↓` — jump to previous / next item (resets scroll)
 /// - `Page Up` / `Page Down` / `j` / `k` — scroll within the current item
@@ -34,6 +43,19 @@ pub(super) fn run_detail_viewer(items: &[ListItem], start_idx: usize) -> Result<
 
     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
     let _ = terminal::disable_raw_mode();
+    super::restore_terminal();
+    result?;
+    Ok(idx)
+}
+
+/// Like [`run_detail_viewer`] but does NOT touch terminal state — for use when
+/// the caller (e.g. the sortable table) already owns raw mode + alternate screen.
+/// The caller's render loop will redraw the table on the next frame.
+pub(super) fn run_detail_viewer_nested(items: &[ListItem], start_idx: usize) -> Result<usize> {
+    let mut idx = start_idx;
+    let mut scroll: usize = 0;
+    let mut stdout = std::io::stdout();
+    let result = detail_loop(items, &mut idx, &mut scroll, &mut stdout);
     result?;
     Ok(idx)
 }

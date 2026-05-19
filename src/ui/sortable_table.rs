@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Interactive sortable table: htop-style column-header click to sort, plus
 //! optional click-on-preamble to open a full-screen [chart](super::chart).
 
@@ -15,10 +21,11 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 
-use crate::analysis::{ChartConfig, SortableRow};
+use crate::analysis::{ChartConfig, ListItem, SortableRow};
 use crate::util::truncate;
 
 use super::chart::render_chart;
+use super::detail_viewer::run_detail_viewer_nested;
 
 const MIN_CELL_WIDTH: usize = 20;
 
@@ -37,10 +44,12 @@ pub(super) fn display_sortable_table(
         return;
     }
 
+    let has_detail = rows.iter().any(|r| r.detail.is_some());
     let mut state = TableState {
         sort_col: sortable.first().copied().unwrap_or(0),
         sort_asc: false,
         scroll: 0,
+        cursor: 0,
         chart_mode: false,
     };
 
@@ -63,6 +72,7 @@ pub(super) fn display_sortable_table(
         sortable,
         rows,
         summary,
+        has_detail,
         &mut state,
         &mut stdout,
     );
@@ -74,13 +84,15 @@ pub(super) fn display_sortable_table(
         cursor::Show
     );
     let _ = terminal::disable_raw_mode();
+    super::restore_terminal();
 }
 
-/// Mutable scroll/sort state preserved across event-loop iterations.
+/// Mutable scroll/sort/cursor state preserved across event-loop iterations.
 struct TableState {
     sort_col: usize,
     sort_asc: bool,
     scroll: usize,
+    cursor: usize,
     chart_mode: bool,
 }
 
@@ -93,6 +105,7 @@ fn run_loop(
     sortable: &[usize],
     rows: &[SortableRow],
     summary: Option<&str>,
+    has_detail: bool,
     state: &mut TableState,
     stdout: &mut impl Write,
 ) -> Result<()> {
@@ -155,13 +168,33 @@ fn run_loop(
             data_height,
             term_rows,
             term_cols,
+            has_detail,
             state,
             stdout,
         )?;
 
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if handle_key_event(key.code, key.modifiers, state, data_height, max_scroll) {
+                if key.code == KeyCode::Enter && has_detail {
+                    let detail_items: Vec<ListItem> = order
+                        .iter()
+                        .map(|&idx| ListItem {
+                            label: rows[idx].cells.first().cloned().unwrap_or_default(),
+                            detail: rows[idx].detail.clone().unwrap_or_default(),
+                        })
+                        .collect();
+                    let returned =
+                        run_detail_viewer_nested(&detail_items, state.cursor).unwrap_or(state.cursor);
+                    state.cursor = returned.min(rows.len().saturating_sub(1));
+                    scroll_to_cursor(state, data_height, max_scroll);
+                } else if handle_key_event(
+                    key.code,
+                    key.modifiers,
+                    state,
+                    data_height,
+                    max_scroll,
+                    rows.len(),
+                ) {
                     return Ok(());
                 }
             }
@@ -192,24 +225,50 @@ fn handle_key_event(
     state: &mut TableState,
     data_height: usize,
     max_scroll: usize,
+    rows_len: usize,
 ) -> bool {
+    let last = rows_len.saturating_sub(1);
     match (code, mods) {
         (KeyCode::Char('q'), _)
         | (KeyCode::Esc, _)
         | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             return true;
         }
-        (KeyCode::Up, _) => state.scroll = state.scroll.saturating_sub(1),
-        (KeyCode::Down, _) => state.scroll = state.scroll.saturating_add(1).min(max_scroll),
-        (KeyCode::PageUp, _) => state.scroll = state.scroll.saturating_sub(data_height),
-        (KeyCode::PageDown, _) => {
-            state.scroll = state.scroll.saturating_add(data_height).min(max_scroll)
+        (KeyCode::Up, _) => {
+            state.cursor = state.cursor.saturating_sub(1);
+            scroll_to_cursor(state, data_height, max_scroll);
         }
-        (KeyCode::Home, _) => state.scroll = 0,
-        (KeyCode::End, _) => state.scroll = max_scroll,
+        (KeyCode::Down, _) => {
+            state.cursor = (state.cursor + 1).min(last);
+            scroll_to_cursor(state, data_height, max_scroll);
+        }
+        (KeyCode::PageUp, _) => {
+            state.cursor = state.cursor.saturating_sub(data_height);
+            scroll_to_cursor(state, data_height, max_scroll);
+        }
+        (KeyCode::PageDown, _) => {
+            state.cursor = (state.cursor + data_height).min(last);
+            scroll_to_cursor(state, data_height, max_scroll);
+        }
+        (KeyCode::Home, _) => {
+            state.cursor = 0;
+            state.scroll = 0;
+        }
+        (KeyCode::End, _) => {
+            state.cursor = last;
+            state.scroll = max_scroll;
+        }
         _ => {}
     }
     false
+}
+
+fn scroll_to_cursor(state: &mut TableState, data_height: usize, max_scroll: usize) {
+    if state.cursor < state.scroll {
+        state.scroll = state.cursor;
+    } else if state.cursor >= state.scroll + data_height {
+        state.scroll = state.cursor.saturating_sub(data_height - 1).min(max_scroll);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -248,6 +307,7 @@ fn handle_mouse_event(
                             state.sort_asc = false;
                         }
                         state.scroll = 0;
+                        state.cursor = 0;
                     }
                 }
             }
@@ -344,6 +404,7 @@ fn render_frame(
     data_height: usize,
     term_rows: usize,
     term_cols: usize,
+    has_detail: bool,
     state: &TableState,
     stdout: &mut impl Write,
 ) -> Result<()> {
@@ -392,11 +453,18 @@ fn render_frame(
         if cells.len() > 2 {
             cells[2] = truncate(&cells[2], widths[2]);
         }
-        queue!(
-            stdout,
-            cursor::MoveTo(0, (data_start_y + i) as u16),
-            Print(table_row(&cells, widths))
-        )?;
+        let row_str = table_row(&cells, widths);
+        queue!(stdout, cursor::MoveTo(0, (data_start_y + i) as u16))?;
+        if oi == state.cursor {
+            queue!(
+                stdout,
+                SetAttribute(StyleAttr::Reverse),
+                Print(&row_str),
+                SetAttribute(StyleAttr::Reset)
+            )?;
+        } else {
+            queue!(stdout, Print(&row_str))?;
+        }
     }
 
     // Summary (one line above footer).
@@ -419,9 +487,14 @@ fn render_frame(
     } else {
         ((state.scroll + data_height) * 100 / rows.len()).min(100)
     };
+    let inspect_hint = if has_detail { "  ↵ inspect  │" } else { "" };
+    let sort_hint = if sortable.is_empty() {
+        String::new()
+    } else {
+        format!("  click header to sort  │  {sort_name} {}  │", if state.sort_asc { "▲" } else { "▼" })
+    };
     let footer_text = format!(
-        " bloom-log-analyzer  │  click column header to sort  │  {sort_name} {}  │  ↑/↓ scroll  q/esc back  {pct}%",
-        if state.sort_asc { "▲" } else { "▼" },
+        " bloom-log-analyzer  │{sort_hint}{inspect_hint}  ↑/↓ navigate  q/esc back  {pct}%",
     );
     let footer = format!("{:<width$}", footer_text, width = term_cols);
     queue!(

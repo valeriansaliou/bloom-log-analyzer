@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Heaviest Requests: aggregates estimated byte sizes (headers + body) per
 //! normalized route, ordered heaviest-total first.
 //!
@@ -107,6 +113,7 @@ impl Analysis for HeaviestRequestsBySize {
                         Some(s.max as u64),                // heaviest
                         Some(p95_val.unwrap_or(0) as u64), // p95
                     ],
+                    detail: None,
                 }
             })
             .collect();

@@ -1,10 +1,18 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Selectable list: dialoguer-based picker that opens each item in the
 //! [`detail_viewer`](super::detail_viewer).
 
 use colored::Colorize;
+use crossterm::terminal;
 use dialoguer::{theme::ColorfulTheme, Select};
 
 use crate::analysis::ListItem;
+use crate::util::truncate;
 
 use super::detail_viewer::run_detail_viewer;
 
@@ -34,7 +42,15 @@ fn display_selectable_list_impl(
         return;
     }
 
-    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    // Dialoguer adds ~4 chars of prefix ("  > "); leave a small margin so
+    // long labels never wrap — wrapping breaks dialoguer's cursor management.
+    let term_cols = terminal::size().map(|(w, _)| w as usize).unwrap_or(120);
+    let max_label = term_cols.saturating_sub(6).max(40);
+    let truncated: Vec<String> = items
+        .iter()
+        .map(|i| truncate(&i.label, max_label))
+        .collect();
+    let labels: Vec<&str> = truncated.iter().map(|s| s.as_str()).collect();
     let mut last_idx: usize = 0;
 
     loop {

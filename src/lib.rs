@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! bloom-log-analyzer — HTTP request log analyzer.
 //!
 //! Parses HTTP request logs into pre-aggregated statistics, then offers
@@ -24,7 +30,6 @@ use crate::analysis::{AnalysisOutput, Registry};
 use crate::log::ParsedLog;
 use crate::ui::Selection;
 
-// bum gun / bidet sprayer — the AnalGun
 const LOGO: &str = r"
                _
               / \
@@ -54,11 +59,10 @@ pub fn run(log_file: &Path) -> Result<()> {
         return Ok(());
     }
 
-    print_summary(&log, log_file);
-
     let registry = Registry::default();
     let mut last_was_interrupt = false;
     loop {
+        print_summary(&log, log_file);
         match ui::select_analysis(&registry)? {
             Selection::Quit => break,
             Selection::Interrupted => {

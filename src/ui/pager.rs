@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Simple full-screen pager.  Used for `AnalysisOutput::Table` content.
 
 use std::io::Write;
@@ -24,6 +30,7 @@ pub(super) fn run_pager(content: &str) -> Result<()> {
 
     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
     let _ = terminal::disable_raw_mode();
+    super::restore_terminal();
     result
 }
 

@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Full-screen bar chart drawn over the alternate screen.  Opened from a
 //! [`SortableTable`](crate::analysis::AnalysisOutput::SortableTable) when the
 //! user clicks the sparkline preamble.

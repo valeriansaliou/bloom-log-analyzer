@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Interactive terminal UI: analysis selection menu and result rendering.
 //!
 //! The UI is split into focused submodules:
@@ -16,6 +22,30 @@ mod sortable_table;
 mod table_format;
 
 pub(crate) use selectable_list::display_selectable_list_with_context;
+
+/// Called after every TUI component exits to restore a clean normal-buffer state.
+///
+/// 1. Clears the normal terminal buffer (which may contain old progress bars or
+///    menu history left behind when the alternate screen was active).
+/// 2. Drains any input events that were buffered while in raw mode — most
+///    importantly the Esc or 'q' that dismissed the TUI, which would otherwise
+///    be silently consumed by the next `dialoguer::Select`, forcing the user to
+///    press Enter an extra time before the menu appears.
+///
+/// Must be called *after* `LeaveAlternateScreen` and `disable_raw_mode`.
+pub(super) fn restore_terminal() {
+    use crossterm::{cursor, event, execute, terminal};
+    use std::time::Duration;
+    let mut stdout = std::io::stdout();
+    let _ = execute!(
+        stdout,
+        terminal::Clear(terminal::ClearType::All),
+        cursor::MoveTo(0, 0)
+    );
+    while event::poll(Duration::ZERO).unwrap_or(false) {
+        let _ = event::read();
+    }
+}
 
 use anyhow::{Context, Result};
 use colored::Colorize;

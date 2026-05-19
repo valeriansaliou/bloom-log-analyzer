@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Traffic Timeline: requests per time bucket, designed to surface bursts.
 //!
 //! Re-scans the log file in parallel, buckets each entry by its timestamp,
@@ -107,6 +113,7 @@ impl Analysis for TrafficTimeline {
                         Some(top_count as u64),  // route req
                         Some(pct_scaled),        // route %
                     ],
+                    detail: None,
                 }
             })
             .collect();

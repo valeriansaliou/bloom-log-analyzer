@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Shared scanning primitives used by the parser and on-demand re-scan
 //! analyses: log-entry regex, URL normalization, and progress-bar styling.
 //!
@@ -91,7 +97,7 @@ fn strip_query(s: String) -> String {
 pub const PROGRESS_FLUSH_BYTES: u64 = 1_024 * 1_024;
 const TICK_INTERVAL: Duration = Duration::from_millis(80);
 
-/// Standard analgun progress bar: cyan bar, brail spinner, "msg eta X" suffix.
+/// Standard progress bar: cyan bar, brail spinner, "msg eta X" suffix.
 pub fn make_progress_bar(file_size: u64, initial_msg: &'static str) -> ProgressBar {
     let pb = ProgressBar::new(file_size);
     pb.set_style(

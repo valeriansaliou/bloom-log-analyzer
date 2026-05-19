@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Outlier request detection — five focused sub-analyses exposed through a
 //! sub-menu.  Each sub-analysis re-scans the source file sequentially with a
 //! shared state-machine scanner and a per-type detection closure.
@@ -8,7 +14,7 @@ use ahash::AHashMap;
 use indicatif::ProgressBar;
 use memmap2::Mmap;
 
-use crate::analysis::{Analysis, AnalysisOutput, ListItem, DEFAULT_TOP_N};
+use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
 use crate::log::{ParsedLog, RouteKey};
 use crate::scanner::{normalize_url, ENTRY_RE, PROGRESS_FLUSH_BYTES};
 use crate::util::{fmt_bytes, fmt_count, truncate};
@@ -588,29 +594,39 @@ fn hits_to_list(hits: Vec<ScanHit>, title: &str) -> AnalysisOutput {
     }
     let shown = hits.len();
     let sep = "─".repeat(64);
-    let items = hits
+    let rows = hits
         .into_iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let label = format!(
-                "{:>4}  {}  {}  {}  {}",
-                i + 1,
-                h.hit_reason,
-                h.method,
-                truncate(&h.raw_url, LABEL_URL_MAX),
-                h.timestamp,
-            );
+        .map(|h| {
             let detail = format!(
                 "anomaly\n{sep}\n  {}\n\noriginal request\n{sep}\n{}",
                 h.hit_reason, h.full_entry,
             );
-            ListItem { label, detail }
+            SortableRow {
+                cells: vec![
+                    h.hit_reason,
+                    h.method,
+                    truncate(&h.raw_url, LABEL_URL_MAX),
+                    h.timestamp,
+                ],
+                sort_keys: vec![None, None, None, None],
+                detail: Some(detail),
+            }
         })
         .collect();
-    AnalysisOutput::SelectableList {
+    AnalysisOutput::SortableTable {
         title: title.into(),
-        items,
-        summary: Some(format!("{} requests found", fmt_count(shown))),
+        preamble: None,
+        chart: None,
+        columns: ["reason", "method", "url", "timestamp"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        sortable: vec![],
+        rows,
+        summary: Some(format!(
+            "{} requests found  ·  ↵ to inspect full request",
+            fmt_count(shown)
+        )),
     }
 }
 

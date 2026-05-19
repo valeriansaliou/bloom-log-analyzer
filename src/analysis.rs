@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Pluggable analyses over a parsed log.
 //!
 //! Each analysis implements the [`Analysis`] trait. The [`Registry`] holds all
@@ -75,6 +81,8 @@ pub struct SortableRow {
     pub cells: Vec<String>,
     /// Sort key per column — `None` for non-sortable columns, `Some(u64)` otherwise.
     pub sort_keys: Vec<Option<u64>>,
+    /// If `Some`, the user can press Enter on this row to open the detail viewer.
+    pub detail: Option<String>,
 }
 
 /// Full-screen chart configuration attached to a [`AnalysisOutput::SortableTable`].

@@ -1,3 +1,9 @@
+// Bloom Log Analyzer
+//
+// Log analysis CLI for the Bloom HTTP REST API caching middleware
+// Copyright: 2026, Valerian Saliou <valerian@valeriansaliou.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 //! Most Seen URL Identifiers: top UUID / `prefix_UUID` / email / numeric
 //! identifier values seen across all URLs (tenants, sessions, items, …).
 
@@ -19,7 +25,7 @@ impl Default for HeaviestIdentifiers {
 
 impl Analysis for HeaviestIdentifiers {
     fn name(&self) -> &'static str {
-        "Most Seen URL Identifiers"
+        "Most Seen URL Identifiers (largest tenants)"
     }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
@@ -42,6 +48,7 @@ impl Analysis for HeaviestIdentifiers {
                         Some(*count as u64), // occurrences
                         Some(pct_scaled),    // share
                     ],
+                    detail: None,
                 }
             })
             .collect();
