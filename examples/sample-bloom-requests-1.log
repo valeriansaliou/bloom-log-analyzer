@@ -1,0 +1,82 @@
+
+[2026-05-17T07:56:03Z] PATCH /v1/website/387eb2ab-c027-4197-8aaf-2ce0e7eed194/conversation/chat_56d4e997-9b80-44ce-9710-8e6eb1405b62/routing
+
+host: app.crisp.chat
+bloom-request-shard: 0
+content-length: 65
+user-agent: python-requests/2.25.1
+accept: */*
+accept-encoding: gzip, br
+authorization: Basic xxxxxx=
+content-type: application/json
+x-forwarded-proto: https
+
+{"assigned": {"user_id": "826c7751-dc14-466e-9dcb-c80181e74768"}}
+
+---
+
+[2026-05-17T07:56:03Z] POST /v1/website/fb44c3b0-9792-442e-8f4f-f9da03c5217b/conversation/chat_16e36aa1-ff85-4de2-9222-83002a323d4b/message
+
+host: app.crisp.chat
+bloom-request-shard: 0
+content-length: 150
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+accept: application/json, text/plain, */*
+accept-encoding: gzip, br
+accept-language: en-US,en;q=0.9
+authorization: Basic xxxxxx=
+content-type: application/json
+origin: https://app.crisp.chat
+priority: u=1, i
+referer: https://app.crisp.chat/
+sec-ch-ua: "Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-origin
+x-forwarded-proto: https
+
+{"type":"text","from":"operator","origin":"chat","content":"Hello! How can I assist you?"}
+
+---
+
+[2026-05-17T07:56:04Z] GET /v1/website/e1a232b4-adb5-4d48-94cc-0a3f216468b5/conversation/chat_c58d7933-0ca7-409d-9e51-6154bd896194/messages
+
+host: app.crisp.chat
+bloom-request-shard: 0
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+accept: application/json, text/plain, */*
+accept-encoding: gzip, br
+accept-language: en-US,en;q=0.9
+authorization: Basic xxxxxx=
+priority: u=1, i
+referer: https://app.crisp.chat/
+sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-origin
+x-forwarded-proto: https
+
+---
+
+[2026-05-17T10:00:01Z] DELETE /v1/website/e1a232b4-adb5-4d48-94cc-0a3f216468b5/conversation/chat_c58d7933-0ca7-409d-9e51-6154bd896194/messages
+
+host: app.crisp.chat
+bloom-request-shard: 0
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+accept: application/json, text/plain, */*
+accept-encoding: gzip, br
+accept-language: en-US,en;q=0.9
+authorization: Basic xxxxxx=
+priority: u=1, i
+referer: https://app.crisp.chat/
+sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-origin
+x-forwarded-proto: https
