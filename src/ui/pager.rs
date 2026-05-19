@@ -37,7 +37,11 @@ fn pager_loop(lines: &[&str], stdout: &mut impl Write) -> Result<()> {
         let content_rows = rows.saturating_sub(1);
         let max_scroll = lines.len().saturating_sub(content_rows);
 
-        queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(0, 0),
+            terminal::Clear(ClearType::All)
+        )?;
         for i in 0..content_rows {
             if let Some(line) = lines.get(scroll + i) {
                 queue!(stdout, Print(line), Print("\r\n"))?;
@@ -58,28 +62,26 @@ fn pager_loop(lines: &[&str], stdout: &mut impl Write) -> Result<()> {
         stdout.flush()?;
 
         match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _)
-                    | (KeyCode::Esc, _)
-                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
-                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
-                        scroll = scroll.saturating_sub(1);
-                    }
-                    (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
-                        scroll = scroll.saturating_add(1).min(max_scroll);
-                    }
-                    (KeyCode::PageUp, _) => {
-                        scroll = scroll.saturating_sub(content_rows);
-                    }
-                    (KeyCode::PageDown, _) => {
-                        scroll = scroll.saturating_add(content_rows).min(max_scroll);
-                    }
-                    (KeyCode::Home, _) => scroll = 0,
-                    (KeyCode::End, _) => scroll = max_scroll,
-                    _ => {}
+            Event::Key(key) if key.kind == KeyEventKind::Press => match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), _)
+                | (KeyCode::Esc, _)
+                | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+                (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                    scroll = scroll.saturating_sub(1);
                 }
-            }
+                (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                    scroll = scroll.saturating_add(1).min(max_scroll);
+                }
+                (KeyCode::PageUp, _) => {
+                    scroll = scroll.saturating_sub(content_rows);
+                }
+                (KeyCode::PageDown, _) => {
+                    scroll = scroll.saturating_add(content_rows).min(max_scroll);
+                }
+                (KeyCode::Home, _) => scroll = 0,
+                (KeyCode::End, _) => scroll = max_scroll,
+                _ => {}
+            },
             Event::Resize(_, _) => {}
             _ => {}
         }

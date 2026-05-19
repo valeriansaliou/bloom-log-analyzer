@@ -54,7 +54,11 @@ fn detail_loop(
         let max_scroll = lines.len().saturating_sub(content_rows);
         *scroll = (*scroll).min(max_scroll);
 
-        queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(0, 0),
+            terminal::Clear(ClearType::All)
+        )?;
         for i in 0..content_rows {
             if let Some(line) = lines.get(*scroll + i) {
                 queue!(stdout, Print(line), Print("\r\n"))?;
@@ -82,35 +86,33 @@ fn detail_loop(
         stdout.flush()?;
 
         match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _)
-                    | (KeyCode::Esc, _)
-                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
+            Event::Key(key) if key.kind == KeyEventKind::Press => match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), _)
+                | (KeyCode::Esc, _)
+                | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
 
-                    (KeyCode::Up, _) => {
-                        if *idx > 0 {
-                            *idx -= 1;
-                            *scroll = 0;
-                        }
+                (KeyCode::Up, _) => {
+                    if *idx > 0 {
+                        *idx -= 1;
+                        *scroll = 0;
                     }
-                    (KeyCode::Down, _) => {
-                        if *idx + 1 < items.len() {
-                            *idx += 1;
-                            *scroll = 0;
-                        }
-                    }
-                    (KeyCode::PageUp, _) | (KeyCode::Char('k'), _) => {
-                        *scroll = scroll.saturating_sub(content_rows);
-                    }
-                    (KeyCode::PageDown, _) | (KeyCode::Char('j'), _) => {
-                        *scroll = scroll.saturating_add(content_rows).min(max_scroll);
-                    }
-                    (KeyCode::Home, _) => *scroll = 0,
-                    (KeyCode::End, _) => *scroll = max_scroll,
-                    _ => {}
                 }
-            }
+                (KeyCode::Down, _) => {
+                    if *idx + 1 < items.len() {
+                        *idx += 1;
+                        *scroll = 0;
+                    }
+                }
+                (KeyCode::PageUp, _) | (KeyCode::Char('k'), _) => {
+                    *scroll = scroll.saturating_sub(content_rows);
+                }
+                (KeyCode::PageDown, _) | (KeyCode::Char('j'), _) => {
+                    *scroll = scroll.saturating_add(content_rows).min(max_scroll);
+                }
+                (KeyCode::Home, _) => *scroll = 0,
+                (KeyCode::End, _) => *scroll = max_scroll,
+                _ => {}
+            },
             Event::Resize(_, _) => {}
             _ => {}
         }

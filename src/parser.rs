@@ -82,8 +82,8 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
                 if pending_bytes >= PROGRESS_FLUSH_BYTES {
                     pb.inc(pending_bytes);
                     pending_bytes = 0;
-                    let total = req_counter.fetch_add(pending_reqs, Ordering::Relaxed)
-                        + pending_reqs;
+                    let total =
+                        req_counter.fetch_add(pending_reqs, Ordering::Relaxed) + pending_reqs;
                     pending_reqs = 0;
                     let elapsed = start.elapsed().as_secs_f64();
                     let rps = if elapsed > 0.1 {
@@ -152,7 +152,6 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
     pb.finish_and_clear();
     Ok(log)
 }
-
 
 fn record_request(log: &mut ParsedLog, method: &str, raw_url: &str, timestamp: &str) {
     let normalized = normalize_url_counted(raw_url, &mut log.identifier_counts);
@@ -296,5 +295,4 @@ mod tests {
         assert_eq!(log.first_timestamp.as_deref(), Some("2026-01-01T01:00:00Z"));
         assert_eq!(log.last_timestamp.as_deref(), Some("2026-01-01T00:30:00Z"));
     }
-
 }

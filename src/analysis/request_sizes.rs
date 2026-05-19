@@ -47,7 +47,9 @@ pub struct HeaviestRequestsBySize {
 
 impl Default for HeaviestRequestsBySize {
     fn default() -> Self {
-        Self { top_n: DEFAULT_TOP_N }
+        Self {
+            top_n: DEFAULT_TOP_N,
+        }
     }
 }
 
@@ -96,13 +98,13 @@ impl Analysis for HeaviestRequestsBySize {
                         p95_val.map_or_else(|| "n/a".into(), |v| fmt_bytes(v as u64)),
                     ],
                     sort_keys: vec![
-                        None,                            // method
-                        None,                            // route
-                        Some(s.total as u64),            // total
-                        Some(pct_scaled),                // % of all (scaled to u64)
-                        Some(s.count as u64),            // requests
-                        Some(avg as u64),                // avg / req
-                        Some(s.max as u64),              // heaviest
+                        None,                              // method
+                        None,                              // route
+                        Some(s.total as u64),              // total
+                        Some(pct_scaled),                  // % of all (scaled to u64)
+                        Some(s.count as u64),              // requests
+                        Some(avg as u64),                  // avg / req
+                        Some(s.max as u64),                // heaviest
                         Some(p95_val.unwrap_or(0) as u64), // p95
                     ],
                 }
@@ -177,7 +179,12 @@ fn compute_sizes(path: &std::path::Path) -> anyhow::Result<AHashMap<RouteKey, Ro
             let (key, bytes) = active.take().unwrap();
             sizes
                 .entry(key)
-                .or_insert_with(|| RouteStats { total: 0, count: 0, max: 0, sizes: Vec::new() })
+                .or_insert_with(|| RouteStats {
+                    total: 0,
+                    count: 0,
+                    max: 0,
+                    sizes: Vec::new(),
+                })
                 .record(bytes);
             req_count += 1;
         }
@@ -202,7 +209,12 @@ fn compute_sizes(path: &std::path::Path) -> anyhow::Result<AHashMap<RouteKey, Ro
     if let Some((key, bytes)) = active.take() {
         sizes
             .entry(key)
-            .or_insert_with(|| RouteStats { total: 0, count: 0, max: 0, sizes: Vec::new() })
+            .or_insert_with(|| RouteStats {
+                total: 0,
+                count: 0,
+                max: 0,
+                sizes: Vec::new(),
+            })
             .record(bytes);
         req_count += 1;
     }

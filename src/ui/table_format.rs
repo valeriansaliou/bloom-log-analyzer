@@ -17,9 +17,12 @@ const FALLBACK_TERM_WIDTH: usize = 120;
 /// other variants return an empty string (they have dedicated displays).
 pub(super) fn format_output(output: &AnalysisOutput) -> String {
     match output {
-        AnalysisOutput::Table { title, columns, rows, summary } => {
-            format_table(title, columns, rows, summary.as_deref())
-        }
+        AnalysisOutput::Table {
+            title,
+            columns,
+            rows,
+            summary,
+        } => format_table(title, columns, rows, summary.as_deref()),
         _ => String::new(),
     }
 }
@@ -59,7 +62,9 @@ fn format_table(
 }
 
 fn header_cell(label: &String) -> Cell {
-    Cell::new(label).add_attribute(Attribute::Bold).fg(Color::Cyan)
+    Cell::new(label)
+        .add_attribute(Attribute::Bold)
+        .fg(Color::Cyan)
 }
 
 /// Maximum characters per cell, sized to keep the rendered table within the

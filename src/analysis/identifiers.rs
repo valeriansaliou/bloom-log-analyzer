@@ -11,7 +11,9 @@ pub struct HeaviestIdentifiers {
 
 impl Default for HeaviestIdentifiers {
     fn default() -> Self {
-        Self { top_n: DEFAULT_TOP_N }
+        Self {
+            top_n: DEFAULT_TOP_N,
+        }
     }
 }
 
@@ -34,15 +36,11 @@ impl Analysis for HeaviestIdentifiers {
             .map(|(id, count)| {
                 let pct_scaled = (*count as f64 / total.max(1) as f64 * 1_000_000.0) as u64;
                 SortableRow {
-                    cells: vec![
-                        id.clone(),
-                        fmt_count(*count),
-                        fmt_pct(*count, total),
-                    ],
+                    cells: vec![id.clone(), fmt_count(*count), fmt_pct(*count, total)],
                     sort_keys: vec![
-                        None,                   // identifier (text)
-                        Some(*count as u64),    // occurrences
-                        Some(pct_scaled),       // share
+                        None,                // identifier (text)
+                        Some(*count as u64), // occurrences
+                        Some(pct_scaled),    // share
                     ],
                 }
             })
@@ -79,7 +77,9 @@ mod tests {
         log.identifier_counts.insert("gamma".into(), 7);
 
         let AnalysisOutput::SortableTable { rows, .. } = HeaviestIdentifiers::default().run(&log)
-        else { panic!("expected SortableTable") };
+        else {
+            panic!("expected SortableTable")
+        };
         assert_eq!(rows[0].cells[0], "alpha");
         assert_eq!(rows[1].cells[0], "gamma");
         assert_eq!(rows[2].cells[0], "beta");

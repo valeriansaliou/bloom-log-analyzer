@@ -19,11 +19,7 @@ pub(crate) fn display_selectable_list_with_context(
     display_selectable_list_impl(title, items, summary, Some(context));
 }
 
-pub(super) fn display_selectable_list(
-    title: &str,
-    items: &[ListItem],
-    summary: Option<&str>,
-) {
+pub(super) fn display_selectable_list(title: &str, items: &[ListItem], summary: Option<&str>) {
     display_selectable_list_impl(title, items, summary, None);
 }
 

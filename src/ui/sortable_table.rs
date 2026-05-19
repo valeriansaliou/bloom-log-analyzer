@@ -7,8 +7,8 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-        KeyModifiers, MouseButton, MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        MouseButton, MouseEventKind,
     },
     execute, queue,
     style::{Attribute as StyleAttr, Print, SetAttribute},
@@ -48,11 +48,31 @@ pub(super) fn display_sortable_table(
     if terminal::enable_raw_mode().is_err() {
         return;
     }
-    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide, EnableMouseCapture);
+    let _ = execute!(
+        stdout,
+        terminal::EnterAlternateScreen,
+        cursor::Hide,
+        EnableMouseCapture
+    );
 
-    let _ = run_loop(title, preamble, chart, columns, sortable, rows, summary, &mut state, &mut stdout);
+    let _ = run_loop(
+        title,
+        preamble,
+        chart,
+        columns,
+        sortable,
+        rows,
+        summary,
+        &mut state,
+        &mut stdout,
+    );
 
-    let _ = execute!(stdout, DisableMouseCapture, terminal::LeaveAlternateScreen, cursor::Show);
+    let _ = execute!(
+        stdout,
+        DisableMouseCapture,
+        terminal::LeaveAlternateScreen,
+        cursor::Show
+    );
     let _ = terminal::disable_raw_mode();
 }
 
@@ -92,10 +112,12 @@ fn run_loop(
                 render_chart(cfg, title, stdout, term_rows, term_cols)?;
             }
             match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => match (key.code, key.modifiers) {
-                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
-                    _ => state.chart_mode = false,
-                },
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
+                        _ => state.chart_mode = false,
+                    }
+                }
                 Event::Mouse(me) if matches!(me.kind, MouseEventKind::Down(_)) => {
                     state.chart_mode = false;
                 }
@@ -119,9 +141,22 @@ fn run_loop(
         state.scroll = state.scroll.min(max_scroll);
 
         render_frame(
-            title, &preamble_lines, columns, sortable, rows, summary,
-            &widths, &order, header_y, sep_y, data_start_y, data_height,
-            term_rows, term_cols, state, stdout,
+            title,
+            &preamble_lines,
+            columns,
+            sortable,
+            rows,
+            summary,
+            &widths,
+            &order,
+            header_y,
+            sep_y,
+            data_start_y,
+            data_height,
+            term_rows,
+            term_cols,
+            state,
+            stdout,
         )?;
 
         match event::read()? {
@@ -132,8 +167,16 @@ fn run_loop(
             }
             Event::Mouse(me) => {
                 handle_mouse_event(
-                    me, state, chart, preamble_h, header_y, sep_y, &col_x_ranges, sortable,
-                    data_height, max_scroll,
+                    me,
+                    state,
+                    chart,
+                    preamble_h,
+                    header_y,
+                    sep_y,
+                    &col_x_ranges,
+                    sortable,
+                    data_height,
+                    max_scroll,
                 );
             }
             Event::Resize(_, _) => {}
@@ -151,13 +194,17 @@ fn handle_key_event(
     max_scroll: usize,
 ) -> bool {
     match (code, mods) {
-        (KeyCode::Char('q'), _) | (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+        (KeyCode::Char('q'), _)
+        | (KeyCode::Esc, _)
+        | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             return true;
         }
         (KeyCode::Up, _) => state.scroll = state.scroll.saturating_sub(1),
         (KeyCode::Down, _) => state.scroll = state.scroll.saturating_add(1).min(max_scroll),
         (KeyCode::PageUp, _) => state.scroll = state.scroll.saturating_sub(data_height),
-        (KeyCode::PageDown, _) => state.scroll = state.scroll.saturating_add(data_height).min(max_scroll),
+        (KeyCode::PageDown, _) => {
+            state.scroll = state.scroll.saturating_add(data_height).min(max_scroll)
+        }
         (KeyCode::Home, _) => state.scroll = 0,
         (KeyCode::End, _) => state.scroll = max_scroll,
         _ => {}
@@ -220,9 +267,21 @@ fn handle_mouse_event(
 fn sort_indices(rows: &[SortableRow], sort_col: usize, sort_asc: bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
     order.sort_by(|&a, &b| {
-        let ka = rows[a].sort_keys.get(sort_col).and_then(|k| *k).unwrap_or(0);
-        let kb = rows[b].sort_keys.get(sort_col).and_then(|k| *k).unwrap_or(0);
-        if sort_asc { ka.cmp(&kb) } else { kb.cmp(&ka) }
+        let ka = rows[a]
+            .sort_keys
+            .get(sort_col)
+            .and_then(|k| *k)
+            .unwrap_or(0);
+        let kb = rows[b]
+            .sort_keys
+            .get(sort_col)
+            .and_then(|k| *k)
+            .unwrap_or(0);
+        if sort_asc {
+            ka.cmp(&kb)
+        } else {
+            kb.cmp(&ka)
+        }
     });
     order
 }
@@ -288,7 +347,11 @@ fn render_frame(
     state: &TableState,
     stdout: &mut impl Write,
 ) -> Result<()> {
-    queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(0, 0),
+        terminal::Clear(ClearType::All)
+    )?;
 
     // Title.
     queue!(stdout, cursor::MoveTo(0, 0), Print(format!("  {title}")))?;
@@ -304,10 +367,18 @@ fn render_frame(
         .enumerate()
         .map(|(ci, _)| build_header_cell(ci, columns, sortable, state))
         .collect();
-    queue!(stdout, cursor::MoveTo(0, header_y as u16), Print(table_row(&header_cells, widths)))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(0, header_y as u16),
+        Print(table_row(&header_cells, widths))
+    )?;
 
     // Separator.
-    queue!(stdout, cursor::MoveTo(0, sep_y as u16), Print(table_separator(widths)))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(0, sep_y as u16),
+        Print(table_separator(widths))
+    )?;
 
     // Data rows.
     for i in 0..data_height {
@@ -321,17 +392,28 @@ fn render_frame(
         if cells.len() > 2 {
             cells[2] = truncate(&cells[2], widths[2]);
         }
-        queue!(stdout, cursor::MoveTo(0, (data_start_y + i) as u16), Print(table_row(&cells, widths)))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(0, (data_start_y + i) as u16),
+            Print(table_row(&cells, widths))
+        )?;
     }
 
     // Summary (one line above footer).
     if let Some(s) = summary {
         let summary_y = term_rows.saturating_sub(2) as u16;
-        queue!(stdout, cursor::MoveTo(0, summary_y), Print(format!("  {s}")))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(0, summary_y),
+            Print(format!("  {s}"))
+        )?;
     }
 
     // Footer.
-    let sort_name = columns.get(state.sort_col).map(String::as_str).unwrap_or("?");
+    let sort_name = columns
+        .get(state.sort_col)
+        .map(String::as_str)
+        .unwrap_or("?");
     let pct = if rows.len() <= data_height {
         100
     } else {
@@ -353,7 +435,12 @@ fn render_frame(
     Ok(())
 }
 
-fn build_header_cell(ci: usize, columns: &[String], sortable: &[usize], state: &TableState) -> String {
+fn build_header_cell(
+    ci: usize,
+    columns: &[String],
+    sortable: &[usize],
+    state: &TableState,
+) -> String {
     if ci == 0 {
         return "#".to_string();
     }

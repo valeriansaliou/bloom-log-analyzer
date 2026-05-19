@@ -10,7 +10,9 @@ pub struct HeaviestRoutes {
 
 impl Default for HeaviestRoutes {
     fn default() -> Self {
-        Self { top_n: DEFAULT_TOP_N }
+        Self {
+            top_n: DEFAULT_TOP_N,
+        }
     }
 }
 
@@ -39,10 +41,10 @@ impl Analysis for HeaviestRoutes {
                         fmt_pct(*count, total),
                     ],
                     sort_keys: vec![
-                        None,                   // method
-                        None,                   // route
-                        Some(*count as u64),    // calls
-                        Some(pct_scaled),       // share
+                        None,                // method
+                        None,                // route
+                        Some(*count as u64), // calls
+                        Some(pct_scaled),    // share
                     ],
                 }
             })
@@ -77,8 +79,9 @@ mod tests {
         log.route_counts.insert(RouteKey::new("GET", "/a"), 5);
         log.route_counts.insert(RouteKey::new("POST", "/b"), 1);
 
-        let AnalysisOutput::SortableTable { rows, .. } = HeaviestRoutes::default().run(&log)
-        else { panic!("expected SortableTable") };
+        let AnalysisOutput::SortableTable { rows, .. } = HeaviestRoutes::default().run(&log) else {
+            panic!("expected SortableTable")
+        };
         assert_eq!(rows[0].cells[0], "GET");
         assert_eq!(rows[0].cells[1], "/a");
         assert_eq!(rows[1].cells[0], "POST");

@@ -29,25 +29,48 @@ const LARGE_QUERY_THRESHOLD: usize = 512;
 /// Max URL chars shown in navigation list labels.
 const LABEL_URL_MAX: usize = 55;
 
-
 // ── Sub-menu entry point ────────────────────────────────────────────────────
 
 pub struct OutlierRequests;
 
 impl Analysis for OutlierRequests {
     fn name(&self) -> &'static str {
-        "Outlier Requests"
+        "Outlier Requests (weird requests)"
     }
 
     fn run(&self, _log: &ParsedLog) -> AnalysisOutput {
         AnalysisOutput::SubMenu {
             title: "Outlier Requests — detection type".into(),
             options: vec![
-                (format!("Large Request       content-length > {} KB", LARGE_REQUEST_THRESHOLD / 1_000), Box::new(LargeRequest) as Box<dyn Analysis>),
-                (format!("Large Header        single header line > {} KB", LARGE_HEADER_THRESHOLD / 1_000), Box::new(LargeHeader)),
-                (format!("Large Query String  query part > {} chars", LARGE_QUERY_THRESHOLD), Box::new(LargeQueryString)),
-                ("Anomalous Header    non-standard characters in header name".into(), Box::new(AnomalousHeaderName)),
-                ("Rare URL            route pattern with unusually low traffic".into(), Box::new(RareUrl)),
+                (
+                    format!(
+                        "Large Request       content-length > {} KB",
+                        LARGE_REQUEST_THRESHOLD / 1_000
+                    ),
+                    Box::new(LargeRequest) as Box<dyn Analysis>,
+                ),
+                (
+                    format!(
+                        "Large Header        single header line > {} KB",
+                        LARGE_HEADER_THRESHOLD / 1_000
+                    ),
+                    Box::new(LargeHeader),
+                ),
+                (
+                    format!(
+                        "Large Query String  query part > {} chars",
+                        LARGE_QUERY_THRESHOLD
+                    ),
+                    Box::new(LargeQueryString),
+                ),
+                (
+                    "Anomalous Header    non-standard characters in header name".into(),
+                    Box::new(AnomalousHeaderName),
+                ),
+                (
+                    "Rare URL            route pattern with unusually low traffic".into(),
+                    Box::new(RareUrl),
+                ),
             ],
         }
     }
@@ -58,10 +81,15 @@ impl Analysis for OutlierRequests {
 struct LargeRequest;
 
 impl Analysis for LargeRequest {
-    fn name(&self) -> &'static str { "Large Request" }
+    fn name(&self) -> &'static str {
+        "Large Request"
+    }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
-        let path = match &log.source_path { Some(p) => p.clone(), None => return no_source() };
+        let path = match &log.source_path {
+            Some(p) => p.clone(),
+            None => return no_source(),
+        };
         let hits = rescan_generic(
             &path,
             MAX_HITS,
@@ -82,11 +110,15 @@ impl Analysis for LargeRequest {
                     }
                 }
             },
-        ).unwrap_or_default();
+        )
+        .unwrap_or_default();
 
         hits_to_list(
             hits,
-            &format!("Large Requests  (content-length > {} KB)", LARGE_REQUEST_THRESHOLD / 1_000),
+            &format!(
+                "Large Requests  (content-length > {} KB)",
+                LARGE_REQUEST_THRESHOLD / 1_000
+            ),
         )
     }
 }
@@ -96,10 +128,15 @@ impl Analysis for LargeRequest {
 struct LargeHeader;
 
 impl Analysis for LargeHeader {
-    fn name(&self) -> &'static str { "Large Header" }
+    fn name(&self) -> &'static str {
+        "Large Header"
+    }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
-        let path = match &log.source_path { Some(p) => p.clone(), None => return no_source() };
+        let path = match &log.source_path {
+            Some(p) => p.clone(),
+            None => return no_source(),
+        };
         let hits = rescan_generic(
             &path,
             MAX_HITS,
@@ -114,9 +151,7 @@ impl Analysis for LargeHeader {
                         return;
                     }
                     // Cookies are legitimately large; only flag above the higher threshold.
-                    if name.eq_ignore_ascii_case("cookie")
-                        && line.len() <= LARGE_COOKIE_THRESHOLD
-                    {
+                    if name.eq_ignore_ascii_case("cookie") && line.len() <= LARGE_COOKIE_THRESHOLD {
                         return;
                     }
                     *reason = format!(
@@ -126,11 +161,15 @@ impl Analysis for LargeHeader {
                     );
                 }
             },
-        ).unwrap_or_default();
+        )
+        .unwrap_or_default();
 
         hits_to_list(
             hits,
-            &format!("Large Headers  (single header line > {} KB)", LARGE_HEADER_THRESHOLD / 1_000),
+            &format!(
+                "Large Headers  (single header line > {} KB)",
+                LARGE_HEADER_THRESHOLD / 1_000
+            ),
         )
     }
 }
@@ -140,10 +179,15 @@ impl Analysis for LargeHeader {
 struct LargeQueryString;
 
 impl Analysis for LargeQueryString {
-    fn name(&self) -> &'static str { "Large Query String" }
+    fn name(&self) -> &'static str {
+        "Large Query String"
+    }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
-        let path = match &log.source_path { Some(p) => p.clone(), None => return no_source() };
+        let path = match &log.source_path {
+            Some(p) => p.clone(),
+            None => return no_source(),
+        };
         let hits = rescan_generic(
             &path,
             MAX_HITS,
@@ -152,20 +196,21 @@ impl Analysis for LargeQueryString {
                 if let Some(q) = url.find('?') {
                     let qlen = url.len() - q - 1;
                     if qlen > LARGE_QUERY_THRESHOLD {
-                        return Some(format!(
-                            "query string: {} chars",
-                            fmt_count(qlen)
-                        ));
+                        return Some(format!("query string: {} chars", fmt_count(qlen)));
                     }
                 }
                 None
             },
             &mut |_line, _in_headers, _reason| {}, // detected from URL, no header inspection
-        ).unwrap_or_default();
+        )
+        .unwrap_or_default();
 
         hits_to_list(
             hits,
-            &format!("Large Query Strings  (query part > {} chars)", LARGE_QUERY_THRESHOLD),
+            &format!(
+                "Large Query Strings  (query part > {} chars)",
+                LARGE_QUERY_THRESHOLD
+            ),
         )
     }
 }
@@ -175,10 +220,15 @@ impl Analysis for LargeQueryString {
 struct AnomalousHeaderName;
 
 impl Analysis for AnomalousHeaderName {
-    fn name(&self) -> &'static str { "Anomalous Header Name" }
+    fn name(&self) -> &'static str {
+        "Anomalous Header Name"
+    }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
-        let path = match &log.source_path { Some(p) => p.clone(), None => return no_source() };
+        let path = match &log.source_path {
+            Some(p) => p.clone(),
+            None => return no_source(),
+        };
         let hits = rescan_generic(
             &path,
             MAX_HITS,
@@ -199,9 +249,9 @@ impl Analysis for AnomalousHeaderName {
                         );
                     } else {
                         // Flag names with anything outside [a-zA-Z0-9\-_].
-                        let has_anomaly = name.bytes().any(|b| {
-                            !b.is_ascii_alphanumeric() && b != b'-' && b != b'_'
-                        });
+                        let has_anomaly = name
+                            .bytes()
+                            .any(|b| !b.is_ascii_alphanumeric() && b != b'-' && b != b'_');
                         if has_anomaly {
                             *reason = format!(
                                 "header name '{}' contains non-standard chars",
@@ -211,9 +261,13 @@ impl Analysis for AnomalousHeaderName {
                     }
                 }
             },
-        ).unwrap_or_default();
+        )
+        .unwrap_or_default();
 
-        hits_to_list(hits, "Anomalous Header Names  (non-standard chars in header name)")
+        hits_to_list(
+            hits,
+            "Anomalous Header Names  (non-standard chars in header name)",
+        )
     }
 }
 
@@ -226,10 +280,15 @@ impl Analysis for AnomalousHeaderName {
 struct RareUrl;
 
 impl Analysis for RareUrl {
-    fn name(&self) -> &'static str { "Rare URL" }
+    fn name(&self) -> &'static str {
+        "Rare URL"
+    }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
-        let path = match &log.source_path { Some(p) => p.clone(), None => return no_source() };
+        let path = match &log.source_path {
+            Some(p) => p.clone(),
+            None => return no_source(),
+        };
 
         let threshold = outlier_threshold(log);
         // Build a map: normalized RouteKey → global call count, for outlier routes only.
@@ -244,8 +303,7 @@ impl Analysis for RareUrl {
             return no_results("No outlier routes detected.");
         }
 
-        let hits = rescan_rare_url(&path, &outlier_keys, log.total_requests)
-            .unwrap_or_default();
+        let hits = rescan_rare_url(&path, &outlier_keys, log.total_requests).unwrap_or_default();
 
         hits_to_list(
             hits,
@@ -281,7 +339,13 @@ struct ActiveEntry {
 }
 
 impl ActiveEntry {
-    fn new(timestamp: String, method: String, raw_url: String, first_line: String, reason: String) -> Self {
+    fn new(
+        timestamp: String,
+        method: String,
+        raw_url: String,
+        first_line: String,
+        reason: String,
+    ) -> Self {
         let bytes = first_line.len() + 1;
         Self {
             timestamp,
@@ -470,7 +534,9 @@ fn rescan_rare_url(
             hits.push(entry_to_hit(entry, &mut done_bytes));
         }
 
-        if is_sep { continue; }
+        if is_sep {
+            continue;
+        }
 
         if let Some(entry) = active.as_mut() {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
@@ -536,8 +602,7 @@ fn hits_to_list(hits: Vec<ScanHit>, title: &str) -> AnalysisOutput {
             );
             let detail = format!(
                 "anomaly\n{sep}\n  {}\n\noriginal request\n{sep}\n{}",
-                h.hit_reason,
-                h.full_entry,
+                h.hit_reason, h.full_entry,
             );
             ListItem { label, detail }
         })
@@ -565,7 +630,9 @@ fn no_results(msg: &str) -> AnalysisOutput {
 // ── Utilities ───────────────────────────────────────────────────────────────
 
 fn outlier_threshold(log: &ParsedLog) -> usize {
-    if log.route_counts.is_empty() { return 0; }
+    if log.route_counts.is_empty() {
+        return 0;
+    }
     let mut counts: Vec<usize> = log.route_counts.values().copied().collect();
     counts.sort_unstable();
     counts[counts.len() / 20].min(20)
@@ -576,22 +643,44 @@ fn outlier_threshold(log: &ParsedLog) -> usize {
 fn parse_content_length(line: &str) -> Option<u64> {
     const PREFIX: &[u8] = b"content-length:";
     let bytes = line.as_bytes();
-    if bytes.len() <= PREFIX.len() { return None; }
-    if !bytes[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) { return None; }
-    std::str::from_utf8(&bytes[PREFIX.len()..]).ok()?.trim().parse().ok()
+    if bytes.len() <= PREFIX.len() {
+        return None;
+    }
+    if !bytes[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+        return None;
+    }
+    std::str::from_utf8(&bytes[PREFIX.len()..])
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn fmt_share(n: usize, total: usize) -> String {
-    if total == 0 { return "?%".into(); }
+    if total == 0 {
+        return "?%".into();
+    }
     let pct = n as f64 * 100.0 / total as f64;
-    if pct >= 1.0 { format!("{:.1}%", pct) }
-    else if pct >= 0.01 { format!("{:.3}%", pct) }
-    else if pct >= 0.0001 { format!("{:.6}%", pct) }
-    else { format!("1 in {}", fmt_count((total as f64 / n as f64).round() as usize)) }
+    if pct >= 1.0 {
+        format!("{:.1}%", pct)
+    } else if pct >= 0.01 {
+        format!("{:.3}%", pct)
+    } else if pct >= 0.0001 {
+        format!("{:.6}%", pct)
+    } else {
+        format!(
+            "1 in {}",
+            fmt_count((total as f64 / n as f64).round() as usize)
+        )
+    }
 }
 
 fn progress_msg(entries: usize, mem_bytes: usize) -> String {
-    format!("{} hits  {} in memory", fmt_count(entries), fmt_bytes(mem_bytes as u64))
+    format!(
+        "{} hits  {} in memory",
+        fmt_count(entries),
+        fmt_bytes(mem_bytes as u64)
+    )
 }
 
 fn make_progress_bar(file_size: u64) -> ProgressBar {

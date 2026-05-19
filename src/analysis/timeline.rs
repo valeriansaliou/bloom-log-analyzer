@@ -90,8 +90,7 @@ impl Analysis for TrafficTimeline {
                     .map(|(k, &c)| (format!("{} {}", k.method, k.url), c))
                     .unwrap_or_else(|| ("—".into(), 0));
 
-                let pct_scaled =
-                    (top_count as f64 / data.total.max(1) as f64 * 1_000_000.0) as u64;
+                let pct_scaled = (top_count as f64 / data.total.max(1) as f64 * 1_000_000.0) as u64;
 
                 SortableRow {
                     cells: vec![
@@ -102,11 +101,11 @@ impl Analysis for TrafficTimeline {
                         fmt_pct(top_count, data.total),
                     ],
                     sort_keys: vec![
-                        Some(bucket_start),         // time (unix secs — chronological sort)
-                        Some(data.total as u64),    // total req
-                        None,                       // top route (text)
-                        Some(top_count as u64),     // route req
-                        Some(pct_scaled),           // route %
+                        Some(bucket_start),      // time (unix secs — chronological sort)
+                        Some(data.total as u64), // total req
+                        None,                    // top route (text)
+                        Some(top_count as u64),  // route req
+                        Some(pct_scaled),        // route %
                     ],
                 }
             })
@@ -128,9 +127,7 @@ impl Analysis for TrafficTimeline {
                 .collect(),
             sortable: vec![0, 1, 3, 4],
             rows,
-            summary: Some(
-                "default: burst-first  ·  click 'time' to sort chronologically".into(),
-            ),
+            summary: Some("default: burst-first  ·  click 'time' to sort chronologically".into()),
         }
     }
 }
@@ -213,11 +210,11 @@ fn rescan(
 /// Choose a bucket granularity that gives a meaningful number of data points.
 fn choose_bucket_size(span_secs: u64) -> (u64, &'static str) {
     match span_secs {
-        0..=600        => (1,    "1 second"),
-        601..=7_200    => (10,   "10 seconds"),
-        7_201..=86_400 => (60,   "1 minute"),
+        0..=600 => (1, "1 second"),
+        601..=7_200 => (10, "10 seconds"),
+        7_201..=86_400 => (60, "1 minute"),
         86_401..=604_800 => (300, "5 minutes"),
-        _              => (3_600, "1 hour"),
+        _ => (3_600, "1 hour"),
     }
 }
 
@@ -227,12 +224,12 @@ fn parse_timestamp(ts: &str) -> Option<u64> {
     if ts.len() < 19 {
         return None;
     }
-    let year: i64  = ts[0..4].parse().ok()?;
+    let year: i64 = ts[0..4].parse().ok()?;
     let month: i64 = ts[5..7].parse().ok()?;
-    let day: i64   = ts[8..10].parse().ok()?;
-    let hour: i64  = ts[11..13].parse().ok()?;
-    let min: i64   = ts[14..16].parse().ok()?;
-    let sec: i64   = ts[17..19].parse().ok()?;
+    let day: i64 = ts[8..10].parse().ok()?;
+    let hour: i64 = ts[11..13].parse().ok()?;
+    let min: i64 = ts[14..16].parse().ok()?;
+    let sec: i64 = ts[17..19].parse().ok()?;
 
     // Gregorian JDN formula (works for all dates after 1582-10-15).
     let a = (14 - month) / 12;
@@ -251,22 +248,22 @@ fn parse_timestamp(ts: &str) -> Option<u64> {
 /// Inverse JDN: convert a Unix timestamp back to a formatted date/time string.
 fn format_bucket_time(unix_secs: u64, bucket_size: u64) -> String {
     let days = unix_secs / 86400;
-    let tod  = unix_secs % 86400;
+    let tod = unix_secs % 86400;
     let h = tod / 3600;
     let m = (tod % 3600) / 60;
     let s = tod % 60;
 
     // Gregorian calendar from JDN.
     let jdn = days + 2440588;
-    let l  = jdn + 68569;
-    let n  = 4 * l / 146097;
+    let l = jdn + 68569;
+    let n = 4 * l / 146097;
     #[allow(clippy::manual_div_ceil)] // Standard JDN-inverse algorithm — not a div_ceil.
-    let l  = l - (146097 * n + 3) / 4;
-    let i  = 4000 * (l + 1) / 1461001;
-    let l  = l - 1461 * i / 4 + 31;
-    let j  = 80 * l / 2447;
+    let l = l - (146097 * n + 3) / 4;
+    let i = 4000 * (l + 1) / 1461001;
+    let l = l - 1461 * i / 4 + 31;
+    let j = 80 * l / 2447;
     let dd = l - 2447 * j / 80;
-    let l  = j / 11;
+    let l = j / 11;
     let mm = j + 2 - 12 * l;
     let yy = 100 * (n - 49) + i + l;
 

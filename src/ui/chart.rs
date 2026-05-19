@@ -43,7 +43,11 @@ pub(super) fn render_chart(
     // Aggregate bucket counts to fit chart_w display columns.
     let col_vals = aggregate(counts, chart_w);
 
-    queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(0, 0),
+        terminal::Clear(ClearType::All)
+    )?;
 
     // Row 0: title + keyboard hint.
     queue!(
@@ -63,8 +67,16 @@ pub(super) fn render_chart(
     let chart_top: usize = 2;
     for row in 0..chart_h {
         let y = (chart_top + row) as u16;
-        queue!(stdout, cursor::MoveTo(0, y), Print(y_axis_label(row, chart_h, max_val)))?;
-        queue!(stdout, cursor::MoveTo(Y_W as u16, y), Print(bar_row(&col_vals, chart_w, row, chart_h, max_val)))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(0, y),
+            Print(y_axis_label(row, chart_h, max_val))
+        )?;
+        queue!(
+            stdout,
+            cursor::MoveTo(Y_W as u16, y),
+            Print(bar_row(&col_vals, chart_w, row, chart_h, max_val))
+        )?;
     }
 
     // X-axis separator line.
@@ -72,7 +84,10 @@ pub(super) fn render_chart(
     queue!(
         stdout,
         cursor::MoveTo(0, x_line_row),
-        Print(format!("         └{}▶", "─".repeat(chart_w.saturating_sub(1))))
+        Print(format!(
+            "         └{}▶",
+            "─".repeat(chart_w.saturating_sub(1))
+        ))
     )?;
 
     // X-axis time labels.
@@ -153,7 +168,11 @@ fn render_x_axis_labels(
     let start_x = Y_W as u16;
     let end_x = term_cols.saturating_sub(cfg.x_end_label.len()) as u16;
 
-    queue!(stdout, cursor::MoveTo(start_x, row), Print(&cfg.x_start_label))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(start_x, row),
+        Print(&cfg.x_start_label)
+    )?;
     if end_x > start_x + cfg.x_start_label.len() as u16 + 2 {
         queue!(stdout, cursor::MoveTo(end_x, row), Print(&cfg.x_end_label))?;
     }
