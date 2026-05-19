@@ -1,5 +1,5 @@
-//! Most Seen Tenant Identifiers: top UUID / `prefix_UUID` / email / long-number
-//! values seen across all URLs.
+//! Most Seen URL Identifiers: top UUID / `prefix_UUID` / email / numeric
+//! identifier values seen across all URLs (tenants, sessions, items, …).
 
 use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
 use crate::log::ParsedLog;
@@ -17,7 +17,7 @@ impl Default for HeaviestIdentifiers {
 
 impl Analysis for HeaviestIdentifiers {
     fn name(&self) -> &'static str {
-        "Most Seen Tenant Identifiers"
+        "Most Seen URL Identifiers"
     }
 
     fn run(&self, log: &ParsedLog) -> AnalysisOutput {
@@ -49,10 +49,9 @@ impl Analysis for HeaviestIdentifiers {
             .collect();
 
         AnalysisOutput::SortableTable {
-            title: format!("Top {shown} Most Seen Tenant Identifiers"),
+            title: format!("Top {shown} Most Seen URL Identifiers"),
             preamble: None,
-            chart_data: None,
-            chart_meta: None,
+            chart: None,
             columns: ["identifier", "occurrences", "share"]
                 .iter()
                 .map(|s| s.to_string())

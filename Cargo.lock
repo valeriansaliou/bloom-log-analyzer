@@ -25,24 +25,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "analgun"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "anyhow",
- "clap",
- "colored",
- "comfy-table",
- "crossterm",
- "dialoguer",
- "indicatif",
- "memmap2",
- "once_cell",
- "rayon",
- "regex",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -103,6 +85,24 @@ name = "bitflags"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+
+[[package]]
+name = "bloom-log-analyzer"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "clap",
+ "colored",
+ "comfy-table",
+ "crossterm",
+ "dialoguer",
+ "indicatif",
+ "memmap2",
+ "once_cell",
+ "rayon",
+ "regex",
+]
 
 [[package]]
 name = "bumpalo"

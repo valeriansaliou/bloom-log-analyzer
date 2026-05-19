@@ -5,7 +5,7 @@ use clap::Parser;
 
 #[derive(Parser)]
 #[command(
-    name = "analgun",
+    name = "bloom-log-analyzer",
     about = "HTTP request log analyzer — fast analysis for large request logs",
     version
 )]
@@ -16,5 +16,5 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    analgun::run(&cli.log_file)
+    bloom_log_analyzer::run(&cli.log_file)
 }

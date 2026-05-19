@@ -1,11 +1,11 @@
 [package]
-name = "analgun"
+name = "bloom-log-analyzer"
 version = "0.1.0"
 edition = "2021"
 description = "HTTP request log analyzer"
 
 [[bin]]
-name = "analgun"
+name = "bloom-log-analyzer"
 path = "src/main.rs"
 
 [dependencies]

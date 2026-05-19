@@ -51,8 +51,7 @@ impl Analysis for HeaviestRoutes {
         AnalysisOutput::SortableTable {
             title: format!("Top {shown} Most Called Routes"),
             preamble: None,
-            chart_data: None,
-            chart_meta: None,
+            chart: None,
             columns: ["method", "route", "calls", "share"]
                 .iter()
                 .map(|s| s.to_string())
@@ -71,8 +70,10 @@ mod tests {
 
     #[test]
     fn ranks_routes_by_descending_count() {
-        let mut log = ParsedLog::default();
-        log.total_requests = 6;
+        let mut log = ParsedLog {
+            total_requests: 6,
+            ..ParsedLog::default()
+        };
         log.route_counts.insert(RouteKey::new("GET", "/a"), 5);
         log.route_counts.insert(RouteKey::new("POST", "/b"), 1);
 

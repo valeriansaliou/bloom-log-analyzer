@@ -5,40 +5,16 @@
 //! the heaviest single request seen and the p95 size estimate.
 
 use std::fs::File;
-use std::time::Duration;
 
 use ahash::AHashMap;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use memmap2::Mmap;
-use once_cell::sync::Lazy;
-use regex::Regex;
 
 use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
 use crate::log::{ParsedLog, RouteKey};
+use crate::scanner::{normalize_url, ENTRY_RE, PROGRESS_FLUSH_BYTES};
 use crate::util::{fmt_bytes, fmt_count, fmt_pct};
 
-static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE valid")
-});
-
-static ID_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?:[a-zA-Z][a-zA-Z0-9_]*_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    )
-    .expect("ID_RE valid")
-});
-
-static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
-        .expect("EMAIL_RE valid")
-});
-
-static LONG_NUMBER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE valid")
-});
-
-const PROGRESS_FLUSH_BYTES: u64 = 1_024 * 1_024;
-const TICK_INTERVAL: Duration = Duration::from_millis(80);
 /// Max individual sizes kept per route for percentile computation.
 const MAX_SIZES_SAMPLE: usize = 1_000;
 /// Minimum samples required before reporting a p95 estimate.
@@ -136,8 +112,7 @@ impl Analysis for HeaviestRequestsBySize {
         AnalysisOutput::SortableTable {
             title: format!("Top {shown} Heaviest Requests  (estimated headers + body)"),
             preamble: None,
-            chart_data: None,
-            chart_meta: None,
+            chart: None,
             columns: ["method", "route", "total", "% of all", "requests", "avg / req", "heaviest", "p95"]
                 .iter()
                 .map(|s| s.to_string())
@@ -153,7 +128,7 @@ impl Analysis for HeaviestRequestsBySize {
 
 /// Compute p95 from a sample of sizes.  Returns `None` if there are fewer than
 /// `MIN_SAMPLES_FOR_P95` data points (not enough for a meaningful estimate).
-fn p95(sizes: &mut Vec<usize>) -> Option<usize> {
+fn p95(sizes: &mut [usize]) -> Option<usize> {
     if sizes.len() < MIN_SAMPLES_FOR_P95 {
         return None;
     }
@@ -216,7 +191,7 @@ fn compute_sizes(path: &std::path::Path) -> anyhow::Result<AHashMap<RouteKey, Ro
         } else if is_entry {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
                 if let Some(caps) = ENTRY_RE.captures(s) {
-                    let normalized = normalize(&caps[3]);
+                    let normalized = normalize_url(&caps[3]);
                     let key = RouteKey::new(&caps[2], normalized);
                     active = Some((key, line_len));
                 }
@@ -243,30 +218,8 @@ fn compute_sizes(path: &std::path::Path) -> anyhow::Result<AHashMap<RouteKey, Ro
     Ok(sizes)
 }
 
-fn normalize(url: &str) -> String {
-    let after_ids = ID_RE.replace_all(url, ":any_id");
-    let after_emails = EMAIL_RE.replace_all(&after_ids, ":any_id");
-    let after_numbers = LONG_NUMBER_RE.replace_all(&after_emails, ":any_id");
-    let s = after_numbers.into_owned();
-    match s.find('?') {
-        Some(pos) => s[..pos].to_string(),
-        None => s,
-    }
-}
-
 fn make_progress_bar(file_size: u64) -> ProgressBar {
-    let pb = ProgressBar::new(file_size);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.cyan} [{bar:45.cyan/238}] {percent:>3}%  {msg}  eta {eta}",
-        )
-        .expect("progress template valid")
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        .progress_chars("█▓░"),
-    );
-    pb.set_message("0 reqs  0 routes");
-    pb.enable_steady_tick(TICK_INTERVAL);
-    pb
+    crate::scanner::make_progress_bar(file_size, "0 reqs  0 routes")
 }
 
 fn error_output(msg: &str) -> AnalysisOutput {

@@ -43,11 +43,9 @@ pub enum AnalysisOutput {
         /// Optional multi-line text rendered between the title and the column
         /// header row (used e.g. for sparklines).
         preamble: Option<String>,
-        /// Raw counts per time bucket used to render the full-screen chart when
-        /// the user clicks on the sparkline preamble.  `None` disables chart mode.
-        chart_data: Option<Vec<usize>>,
-        /// Legend metadata for the chart: `(y_axis_label, x_start_label, x_end_label)`.
-        chart_meta: Option<(String, String, String)>,
+        /// When `Some`, the user can click the preamble to open a full-screen
+        /// bar chart.  See [`ChartConfig`].
+        chart: Option<ChartConfig>,
         /// Column names (no `#`).
         columns: Vec<String>,
         /// Indices into `columns` that support sorting.
@@ -77,6 +75,18 @@ pub struct SortableRow {
     pub cells: Vec<String>,
     /// Sort key per column — `None` for non-sortable columns, `Some(u64)` otherwise.
     pub sort_keys: Vec<Option<u64>>,
+}
+
+/// Full-screen chart configuration attached to a [`AnalysisOutput::SortableTable`].
+pub struct ChartConfig {
+    /// One value per time bucket in chronological order.
+    pub counts: Vec<usize>,
+    /// Y-axis title (e.g. `"requests / 1 minute"`).
+    pub y_axis_label: String,
+    /// Label rendered at the left of the X axis (e.g. start timestamp).
+    pub x_start_label: String,
+    /// Label rendered at the right of the X axis (e.g. end timestamp).
+    pub x_end_label: String,
 }
 
 /// One analysis: produces an [`AnalysisOutput`] from a [`ParsedLog`].

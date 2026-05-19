@@ -12,49 +12,15 @@
 use std::fs::File;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use ahash::AHashMap;
 use anyhow::Result;
-use indicatif::{ProgressBar, ProgressStyle};
-use once_cell::sync::Lazy;
+use indicatif::ProgressBar;
 use rayon::prelude::*;
-use regex::Regex;
 
 use crate::log::{ParsedLog, RouteKey};
+use crate::scanner::{normalize_url_counted, ENTRY_RE, PROGRESS_FLUSH_BYTES};
 use crate::util::fmt_count;
-
-/// Plain UUID or `prefix_UUID` variants (e.g. `session_abc12345-...`).
-static ID_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?:[a-zA-Z][a-zA-Z0-9_]*_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    )
-    .expect("ID_RE pattern is valid")
-});
-
-/// Email addresses in URLs.  Handles both `user@example.com` and the
-/// URL-encoded form `user%40example.com`.  Neither the local part nor the
-/// domain labels may contain `.`, `/`, or other URL separators.
-static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
-        .expect("EMAIL_RE pattern is valid")
-});
-
-/// Any run of 10+ digits is treated as an opaque identifier (timestamps,
-/// large numeric IDs, phone numbers, …).  Pure digits never span a `/`.
-static LONG_NUMBER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE pattern is valid")
-});
-
-/// First line of each log entry: `[timestamp] METHOD /url`.
-static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE pattern is valid")
-});
-
-const TICK_INTERVAL: Duration = Duration::from_millis(80);
-/// Flush accumulated byte progress to the progress bar every 1 MB so the bar
-/// updates smoothly even when chunks are hundreds of megabytes each.
-const PROGRESS_FLUSH_BYTES: u64 = 1_024 * 1_024;
 
 /// Parse `path` into a [`ParsedLog`], using all available CPU cores.
 ///
@@ -189,7 +155,7 @@ pub fn parse_file(path: &Path) -> Result<ParsedLog> {
 
 
 fn record_request(log: &mut ParsedLog, method: &str, raw_url: &str, timestamp: &str) {
-    let normalized = normalize_url(raw_url, &mut log.identifier_counts);
+    let normalized = normalize_url_counted(raw_url, &mut log.identifier_counts);
     *log.route_counts
         .entry(RouteKey::new(method, normalized))
         .or_insert(0) += 1;
@@ -218,51 +184,19 @@ fn parse_content_length(line: &[u8]) -> Option<u64> {
         .ok()
 }
 
-fn normalize_url(url: &str, id_counts: &mut AHashMap<String, usize>) -> String {
-    // Replace UUIDs, then emails, then long numbers — all tracked as identifiers.
-    let after_ids = ID_RE.replace_all(url, |c: &regex::Captures| {
-        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
-        ":any_id"
-    });
-    let after_emails = EMAIL_RE.replace_all(&after_ids, |c: &regex::Captures| {
-        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
-        ":any_id"
-    });
-    let after_numbers = LONG_NUMBER_RE.replace_all(&after_emails, |c: &regex::Captures| {
-        *id_counts.entry(c[0].to_string()).or_insert(0) += 1;
-        ":any_id"
-    });
-    let normalized = after_numbers.into_owned();
-    // Strip query string: routes differing only in query params are the same logical route.
-    match normalized.find('?') {
-        Some(pos) => normalized[..pos].to_string(),
-        None => normalized,
-    }
-}
-
 fn make_progress_bar(file_size: u64) -> ProgressBar {
-    let pb = ProgressBar::new(file_size);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.cyan} [{bar:45.cyan/238}] {percent:>3}%  {msg}  eta {eta}",
-        )
-        .expect("progress template is valid")
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        .progress_chars("█▓░"),
-    );
-    pb.set_message("0 req  0 req/s");
-    pb.enable_steady_tick(TICK_INTERVAL);
-    pb
+    crate::scanner::make_progress_bar(file_size, "0 req  0 req/s")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ahash::AHashMap;
 
     #[test]
     fn normalizes_uuid_and_prefix_uuid() {
         let mut counts = AHashMap::new();
-        let normalized = normalize_url(
+        let normalized = normalize_url_counted(
             "/v1/website/9e578821-15f2-438b-b339-4126ea73abf3/conversation/session_becf8e02-f845-4336-9bcc-443aeac2183f/routing",
             &mut counts,
         );
@@ -281,7 +215,7 @@ mod tests {
     #[test]
     fn normalizes_email_in_url() {
         let mut counts = AHashMap::new();
-        let n = normalize_url("/v1/users/bob@example.com/profile", &mut counts);
+        let n = normalize_url_counted("/v1/users/bob@example.com/profile", &mut counts);
         assert_eq!(n, "/v1/users/:any_id/profile");
         assert!(counts.contains_key("bob@example.com"));
     }
@@ -289,25 +223,34 @@ mod tests {
     #[test]
     fn normalizes_percent_encoded_email() {
         let mut counts = AHashMap::new();
-        let n = normalize_url("/v1/users/bob%40example.com/profile", &mut counts);
+        let n = normalize_url_counted("/v1/users/bob%40example.com/profile", &mut counts);
         assert_eq!(n, "/v1/users/:any_id/profile");
         assert!(counts.contains_key("bob%40example.com"));
     }
 
     #[test]
-    fn normalizes_long_number_in_url() {
+    fn normalizes_any_digit_token() {
+        // Both short and long numeric tokens are normalized.
         let mut counts = AHashMap::new();
-        let n = normalize_url("/v1/phone/1234567890/verify", &mut counts);
-        assert_eq!(n, "/v1/phone/:any_id/verify");
+        let n1 = normalize_url_counted("/v1/items/42/get", &mut counts);
+        assert_eq!(n1, "/v1/items/:any_id/get");
+        assert!(counts.contains_key("42"));
+
+        let mut counts = AHashMap::new();
+        let n2 = normalize_url_counted("/v1/phone/1234567890/verify", &mut counts);
+        assert_eq!(n2, "/v1/phone/:any_id/verify");
         assert!(counts.contains_key("1234567890"));
     }
 
     #[test]
-    fn does_not_normalize_short_number() {
+    fn preserves_version_prefix() {
+        // Digits embedded in a letter token (e.g. `v1`, `api2025`) stay intact.
         let mut counts = AHashMap::new();
-        let n = normalize_url("/v1/items/123456789/get", &mut counts); // 9 digits — too short
-        assert_eq!(n, "/v1/items/123456789/get");
-        assert!(!counts.contains_key("123456789"));
+        let n = normalize_url_counted("/v1/api2025/users/42", &mut counts);
+        assert_eq!(n, "/v1/api2025/users/:any_id");
+        assert!(counts.contains_key("42"));
+        assert!(!counts.contains_key("1"));
+        assert!(!counts.contains_key("2025"));
     }
 
     #[test]

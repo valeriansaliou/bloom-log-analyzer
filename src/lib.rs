@@ -1,4 +1,4 @@
-//! analgun — HTTP request log analyzer.
+//! bloom-log-analyzer — HTTP request log analyzer.
 //!
 //! Parses HTTP request logs into pre-aggregated statistics, then offers
 //! interactive analyses (heaviest routes, heaviest identifiers, …).
@@ -9,6 +9,7 @@
 pub mod analysis;
 pub mod log;
 pub mod parser;
+pub mod scanner;
 pub mod ui;
 pub mod util;
 
@@ -33,11 +34,11 @@ const LOGO: &str = r"
              |   |
               \_/
                |
-             ./ \.
-            /  |  \
-           /   |   \    The Bloom Analytics Gun.
-          /    |    \   Uncovering patterns in your Bloom logs.
-         '-----+-----'
+             ./ \.      Bloom Log Analyzer.
+            /  |  \     Uncovering patterns in your Bloom logs.
+           /   |   \
+          /    |    \   © 2026 Valerian Saliou
+         '-----+-----'  https://valeriansaliou.name
                |
                |
 ";
@@ -111,9 +112,16 @@ fn run_submenu(
                 let output = options[idx].1.run(log);
                 // SelectableList gets a sticky breadcrumb; everything else dispatches normally.
                 match output {
-                    AnalysisOutput::SelectableList { title: ref list_title, ref items, ref summary } => {
+                    AnalysisOutput::SelectableList {
+                        title: ref list_title,
+                        ref items,
+                        ref summary,
+                    } => {
                         ui::display_selectable_list_with_context(
-                            list_title, items, summary.as_deref(), &ctx,
+                            list_title,
+                            items,
+                            summary.as_deref(),
+                            &ctx,
                         );
                     }
                     other => dispatch_output(other, log),
@@ -149,7 +157,7 @@ fn print_summary(log: &ParsedLog, log_file: &Path) {
     eprintln!("{}", LOGO.cyan());
     eprintln!(
         "  {}  {}  {}",
-        "analgun".bold().cyan(),
+        "bloom-log-analyzer".bold().cyan(),
         "·".dimmed(),
         filename.bold()
     );

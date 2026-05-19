@@ -54,7 +54,7 @@ pub(crate) fn split_into_chunks(data: &[u8], n: usize) -> Vec<&[u8]> {
     if data.is_empty() {
         return vec![];
     }
-    let chunk_size = (data.len() + n - 1) / n;
+    let chunk_size = data.len().div_ceil(n);
     let mut chunks = Vec::with_capacity(n);
     let mut start = 0;
     while start < data.len() {

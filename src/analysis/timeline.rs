@@ -6,41 +6,17 @@
 //! requests descending); click the `time` header to switch to chronological.
 
 use std::fs::File;
-use std::time::Duration;
 
 use ahash::AHashMap;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use memmap2::Mmap;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
-use regex::Regex;
 
-use crate::analysis::{Analysis, AnalysisOutput, SortableRow, DEFAULT_TOP_N};
+use crate::analysis::{Analysis, AnalysisOutput, ChartConfig, SortableRow, DEFAULT_TOP_N};
 use crate::log::{ParsedLog, RouteKey};
+use crate::scanner::{normalize_url, ENTRY_RE, PROGRESS_FLUSH_BYTES};
 use crate::util::{fmt_count, fmt_pct, split_into_chunks};
 
-// ── Regexes (same normalisation rules as parser) ────────────────────────────
-
-static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE valid")
-});
-static ID_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?:[a-zA-Z][a-zA-Z0-9_]*_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    )
-    .expect("ID_RE valid")
-});
-static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
-        .expect("EMAIL_RE valid")
-});
-static LONG_NUMBER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE valid"));
-
-// ── Constants ───────────────────────────────────────────────────────────────
-
-const PROGRESS_FLUSH_BYTES: u64 = 1_024 * 1_024;
-const TICK_INTERVAL: Duration = Duration::from_millis(80);
 /// Width of the sparkline in terminal characters.
 const SPARKLINE_WIDTH: usize = 72;
 /// Unicode block characters for 8-level bar (▁ … █).
@@ -140,12 +116,12 @@ impl Analysis for TrafficTimeline {
         AnalysisOutput::SortableTable {
             title: format!("Traffic Timeline  —  top {shown} busiest buckets"),
             preamble: Some(preamble),
-            chart_data: Some(counts),
-            chart_meta: Some((
-                format!("requests / {bucket_label}"),
-                format_bucket_time(first_secs, bucket_size),
-                format_bucket_time(last_secs, bucket_size),
-            )),
+            chart: Some(ChartConfig {
+                counts,
+                y_axis_label: format!("requests / {bucket_label}"),
+                x_start_label: format_bucket_time(first_secs, bucket_size),
+                x_end_label: format_bucket_time(last_secs, bucket_size),
+            }),
             columns: ["time", "total req", "top route", "route req", "route %"]
                 .iter()
                 .map(|s| s.to_string())
@@ -202,7 +178,7 @@ fn rescan(
                     if let Some(caps) = ENTRY_RE.captures(s) {
                         if let Some(secs) = parse_timestamp(&caps[1]) {
                             let bucket_idx = secs.saturating_sub(first_secs) / bucket_size;
-                            let norm = normalize(&caps[3]);
+                            let norm = normalize_url(&caps[3]);
                             let key = RouteKey::new(&caps[2], norm);
                             let b = local.entry(bucket_idx).or_default();
                             *b.routes.entry(key).or_insert(0) += 1;
@@ -284,6 +260,7 @@ fn format_bucket_time(unix_secs: u64, bucket_size: u64) -> String {
     let jdn = days + 2440588;
     let l  = jdn + 68569;
     let n  = 4 * l / 146097;
+    #[allow(clippy::manual_div_ceil)] // Standard JDN-inverse algorithm — not a div_ceil.
     let l  = l - (146097 * n + 3) / 4;
     let i  = 4000 * (l + 1) / 1461001;
     let l  = l - 1461 * i / 4 + 31;
@@ -314,10 +291,10 @@ fn sparkline(counts: &[usize], max_width: usize) -> String {
     }
     // How many buckets to fold into each display character.
     let n_chars = n.min(max_width).max(1);
-    let agg = (n + n_chars - 1) / n_chars; // ceil(n / n_chars)
-    // Actual displayable chars: ceil(n / agg).  This may be < n_chars when
-    // n_chars * agg > n, which would push start past the end of the slice.
-    let actual = (n + agg - 1) / agg;
+    let agg = n.div_ceil(n_chars);
+    // Actual displayable chars may be < n_chars when n_chars * agg > n,
+    // which would push start past the end of the slice.
+    let actual = n.div_ceil(agg);
     (0..actual)
         .map(|i| {
             let start = i * agg;
@@ -329,29 +306,17 @@ fn sparkline(counts: &[usize], max_width: usize) -> String {
         .collect()
 }
 
-fn normalize(url: &str) -> String {
-    let s = ID_RE.replace_all(url, ":any_id");
-    let s = EMAIL_RE.replace_all(&s, ":any_id");
-    let s = LONG_NUMBER_RE.replace_all(&s, ":any_id");
-    let s = s.into_owned();
-    match s.find('?') {
-        Some(pos) => s[..pos].to_string(),
-        None => s,
-    }
+fn make_progress_bar(file_size: u64) -> ProgressBar {
+    crate::scanner::make_progress_bar(file_size, "building timeline")
 }
 
-fn make_progress_bar(file_size: u64) -> ProgressBar {
-    let pb = ProgressBar::new(file_size);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.cyan} [{bar:45.cyan/238}] {percent:>3}%  building timeline  eta {eta}",
-        )
-        .expect("template valid")
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        .progress_chars("█▓░"),
-    );
-    pb.enable_steady_tick(TICK_INTERVAL);
-    pb
+fn error_output(msg: &str) -> AnalysisOutput {
+    AnalysisOutput::Table {
+        title: "Traffic Timeline".into(),
+        columns: vec![],
+        rows: vec![],
+        summary: Some(msg.into()),
+    }
 }
 
 #[cfg(test)]
@@ -379,14 +344,5 @@ mod tests {
         let secs = parse_timestamp("2026-05-17T07:56:03Z").unwrap();
         // 2026-05-17T00:00:00Z = 20590 days * 86400 = 1_778_976_000
         assert_eq!(secs, 1_778_976_000 + 7 * 3600 + 56 * 60 + 3);
-    }
-}
-
-fn error_output(msg: &str) -> AnalysisOutput {
-    AnalysisOutput::Table {
-        title: "Traffic Timeline".into(),
-        columns: vec![],
-        rows: vec![],
-        summary: Some(msg.into()),
     }
 }

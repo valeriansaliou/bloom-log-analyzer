@@ -3,39 +3,15 @@
 //! shared state-machine scanner and a per-type detection closure.
 
 use std::fs::File;
-use std::time::Duration;
 
 use ahash::AHashMap;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use memmap2::Mmap;
-use once_cell::sync::Lazy;
-use regex::Regex;
 
 use crate::analysis::{Analysis, AnalysisOutput, ListItem, DEFAULT_TOP_N};
 use crate::log::{ParsedLog, RouteKey};
+use crate::scanner::{normalize_url, ENTRY_RE, PROGRESS_FLUSH_BYTES};
 use crate::util::{fmt_bytes, fmt_count, truncate};
-
-// ── Regexes ────────────────────────────────────────────────────────────────
-
-static ID_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?:[a-zA-Z][a-zA-Z0-9_]*_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    )
-    .expect("ID_RE valid")
-});
-
-static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[^.@/\s?&=#%+]+(?:@|%40)[^.@/\s?&=#%+]+(?:\.[^.@/\s?&=#%+]+)+")
-        .expect("EMAIL_RE valid")
-});
-
-static LONG_NUMBER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\d{10,}").expect("LONG_NUMBER_RE valid")
-});
-
-static ENTRY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[([^\]]+)\]\s+([A-Z]+)\s+(/\S*)").expect("ENTRY_RE valid")
-});
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -53,8 +29,6 @@ const LARGE_QUERY_THRESHOLD: usize = 512;
 /// Max URL chars shown in navigation list labels.
 const LABEL_URL_MAX: usize = 55;
 
-const PROGRESS_FLUSH_BYTES: u64 = 1_024 * 1_024;
-const TICK_INTERVAL: Duration = Duration::from_millis(80);
 
 // ── Sub-menu entry point ────────────────────────────────────────────────────
 
@@ -293,7 +267,46 @@ struct ScanHit {
     full_entry: String,
 }
 
+/// State for an in-progress entry being collected by the scanner.
+struct ActiveEntry {
+    timestamp: String,
+    method: String,
+    raw_url: String,
+    lines: Vec<String>,
+    /// Non-empty once a detector decides this entry is a hit.
+    reason: String,
+    bytes: usize,
+    /// True until the blank line separating HTTP headers from the body.
+    in_headers: bool,
+}
+
+impl ActiveEntry {
+    fn new(timestamp: String, method: String, raw_url: String, first_line: String, reason: String) -> Self {
+        let bytes = first_line.len() + 1;
+        Self {
+            timestamp,
+            method,
+            raw_url,
+            lines: vec![first_line],
+            reason,
+            bytes,
+            in_headers: true,
+        }
+    }
+
+    fn into_hit(self) -> ScanHit {
+        ScanHit {
+            timestamp: self.timestamp,
+            method: self.method,
+            raw_url: self.raw_url,
+            hit_reason: self.reason,
+            full_entry: self.lines.join("\n"),
+        }
+    }
+}
+
 /// Sequential single-pass file scanner.  Uses a two-state machine:
+///
 /// - **Scanning**: calls `entry_start(ts, method, url)` on each entry header.
 ///   Returns `Some(initial_reason)` to start collecting; `None` to skip.
 /// - **Collecting**: calls `line_update(line, in_headers, &mut reason)` on
@@ -316,11 +329,17 @@ fn rescan_generic(
     let data: &[u8] = &mmap;
 
     let mut hits: Vec<ScanHit> = Vec::new();
-    // Active-collection state: (ts, method, raw_url, lines, hit_reason, bytes, in_headers).
-    let mut active: Option<(String, String, String, Vec<String>, String, usize, bool)> = None;
-
+    let mut active: Option<ActiveEntry> = None;
     let mut pending_bytes: u64 = 0;
     let mut done_bytes: usize = 0;
+
+    let flush_hit = |entry: ActiveEntry, hits: &mut Vec<ScanHit>, done_bytes: &mut usize| {
+        if !entry.reason.is_empty() && hits.len() < max_hits {
+            let hit = entry.into_hit();
+            *done_bytes += hit.full_entry.len();
+            hits.push(hit);
+        }
+    };
 
     for line_bytes in data.split(|&b| b == b'\n') {
         pending_bytes += line_bytes.len() as u64 + 1;
@@ -335,44 +354,35 @@ fn rescan_generic(
 
         // ── Flush on separator or next entry header ─────────────────────
         if active.is_some() && (is_sep || is_entry) {
-            let (ts, method, raw_url, lines, hit_reason, _bytes, _) = active.take().unwrap();
-            if !hit_reason.is_empty() && hits.len() < max_hits {
-                let full_entry = lines.join("\n");
-                done_bytes += full_entry.len();
-                hits.push(ScanHit { timestamp: ts, method, raw_url, hit_reason, full_entry });
-            }
+            flush_hit(active.take().unwrap(), &mut hits, &mut done_bytes);
         }
 
         if is_sep {
             continue;
         }
 
-        if let Some((_, _, _, ref mut lines, ref mut reason, ref mut bytes, ref mut in_headers)) =
-            active
-        {
+        if let Some(entry) = active.as_mut() {
             // ── Collecting: track header/body boundary, run detection ────
             let is_blank = line_bytes.is_empty() || line_bytes == b"\r";
             if is_blank {
-                *in_headers = false;
+                entry.in_headers = false;
             }
             if let Ok(s) = std::str::from_utf8(line_bytes) {
-                *bytes += s.len() + 1;
-                line_update(s, *in_headers, reason);
-                lines.push(s.to_string());
+                entry.bytes += s.len() + 1;
+                line_update(s, entry.in_headers, &mut entry.reason);
+                entry.lines.push(s.to_string());
             }
         } else if is_entry && hits.len() < max_hits {
             // ── Scanning: test entry header ──────────────────────────────
             if let Ok(s) = std::str::from_utf8(line_bytes) {
                 if let Some(caps) = ENTRY_RE.captures(s) {
                     if let Some(initial_reason) = entry_start(&caps[1], &caps[2], &caps[3]) {
-                        active = Some((
+                        active = Some(ActiveEntry::new(
                             caps[1].to_string(),
                             caps[2].to_string(),
                             caps[3].to_string(),
-                            vec![s.to_string()],
+                            s.to_string(),
                             initial_reason,
-                            s.len() + 1,
-                            true, // start in header section
                         ));
                     }
                 }
@@ -381,12 +391,8 @@ fn rescan_generic(
     }
 
     // Flush the last entry if the file has no trailing separator.
-    if let Some((ts, method, raw_url, lines, hit_reason, _, _)) = active.take() {
-        if !hit_reason.is_empty() && hits.len() < max_hits {
-            let full_entry = lines.join("\n");
-            done_bytes += full_entry.len();
-            hits.push(ScanHit { timestamp: ts, method, raw_url, hit_reason, full_entry });
-        }
+    if let Some(entry) = active.take() {
+        flush_hit(entry, &mut hits, &mut done_bytes);
     }
 
     pb.inc(pending_bytes);
@@ -410,13 +416,43 @@ fn rescan_rare_url(
     let mmap = unsafe { Mmap::map(&file)? };
     let data: &[u8] = &mmap;
 
+    /// State for an in-progress rare-URL entry.
+    struct ActiveRareEntry {
+        timestamp: String,
+        method: String,
+        raw_url: String,
+        normalized_url: String,
+        route_total: usize,
+        lines: Vec<String>,
+    }
+
     let mut hits: Vec<ScanHit> = Vec::new();
     let mut per_route: AHashMap<String, usize> = AHashMap::new();
-    let mut active: Option<(String, String, String, String, usize, Vec<String>, usize)> = None;
-    // (ts, method, raw_url, normalized_url, route_total, lines, bytes)
-
+    let mut active: Option<ActiveRareEntry> = None;
     let mut pending_bytes: u64 = 0;
     let mut done_bytes: usize = 0;
+
+    // Convert an active entry into a ScanHit with the standard rare-URL reason.
+    let entry_to_hit = |e: ActiveRareEntry, done_bytes: &mut usize| -> ScanHit {
+        let share = fmt_share(e.route_total, total_requests);
+        let hit_reason = format!(
+            "route {} {} seen {} of {} ({} of traffic)",
+            e.method,
+            e.normalized_url,
+            fmt_count(e.route_total),
+            fmt_count(total_requests),
+            share,
+        );
+        let full_entry = e.lines.join("\n");
+        *done_bytes += full_entry.len();
+        ScanHit {
+            timestamp: e.timestamp,
+            method: e.method,
+            raw_url: e.raw_url,
+            hit_reason,
+            full_entry,
+        }
+    };
 
     for line_bytes in data.split(|&b| b == b'\n') {
         pending_bytes += line_bytes.len() as u64 + 1;
@@ -430,54 +466,36 @@ fn rescan_rare_url(
         let is_entry = !is_sep && line_bytes.first() == Some(&b'[');
 
         if active.is_some() && (is_sep || is_entry) {
-            let (ts, method, raw_url, norm_url, route_total, lines, _) = active.take().unwrap();
-            let share = fmt_share(route_total, total_requests);
-            let full_entry = lines.join("\n");
-            done_bytes += full_entry.len();
-            hits.push(ScanHit {
-                timestamp: ts,
-                method: method.clone(),
-                raw_url,
-                hit_reason: format!(
-                    "route {} {} seen {} of {} ({} of traffic)",
-                    method,
-                    norm_url,
-                    fmt_count(route_total),
-                    fmt_count(total_requests),
-                    share,
-                ),
-                full_entry,
-            });
+            let entry = active.take().unwrap();
+            hits.push(entry_to_hit(entry, &mut done_bytes));
         }
 
         if is_sep { continue; }
 
-        if let Some((_, _, _, _, _, ref mut lines, ref mut bytes)) = active {
+        if let Some(entry) = active.as_mut() {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
-                *bytes += s.len() + 1;
-                lines.push(s.to_string());
+                entry.lines.push(s.to_string());
             }
         } else if is_entry && hits.len() < MAX_HITS {
             if let Ok(s) = std::str::from_utf8(line_bytes) {
                 if let Some(caps) = ENTRY_RE.captures(s) {
                     let method = &caps[2];
                     let raw_url = &caps[3];
-                    let normalized = normalize(raw_url);
+                    let normalized = normalize_url(raw_url);
                     let key = RouteKey::new(method, &normalized);
                     if let Some(&route_total) = outlier_keys.get(&key) {
                         let route_id = format!("{method} {normalized}");
                         let cnt = per_route.entry(route_id).or_insert(0);
                         if *cnt < MAX_EXAMPLES_PER_ROUTE {
                             *cnt += 1;
-                            active = Some((
-                                caps[1].to_string(),
-                                method.to_string(),
-                                raw_url.to_string(),
-                                normalized,
+                            active = Some(ActiveRareEntry {
+                                timestamp: caps[1].to_string(),
+                                method: method.to_string(),
+                                raw_url: raw_url.to_string(),
+                                normalized_url: normalized,
                                 route_total,
-                                vec![s.to_string()],
-                                s.len() + 1,
-                            ));
+                                lines: vec![s.to_string()],
+                            });
                         }
                     }
                 }
@@ -485,24 +503,8 @@ fn rescan_rare_url(
         }
     }
 
-    if let Some((ts, method, raw_url, norm_url, route_total, lines, _)) = active.take() {
-        let share = fmt_share(route_total, total_requests);
-        let full_entry = lines.join("\n");
-        done_bytes += full_entry.len();
-        hits.push(ScanHit {
-            timestamp: ts,
-            method: method.clone(),
-            raw_url,
-            hit_reason: format!(
-                "route {} {} seen {} of {} ({} of traffic)",
-                method,
-                norm_url,
-                fmt_count(route_total),
-                fmt_count(total_requests),
-                share,
-            ),
-            full_entry,
-        });
+    if let Some(entry) = active.take() {
+        hits.push(entry_to_hit(entry, &mut done_bytes));
     }
 
     pb.inc(pending_bytes);
@@ -569,17 +571,6 @@ fn outlier_threshold(log: &ParsedLog) -> usize {
     counts[counts.len() / 20].min(20)
 }
 
-fn normalize(url: &str) -> String {
-    let after_ids = ID_RE.replace_all(url, ":any_id");
-    let after_emails = EMAIL_RE.replace_all(&after_ids, ":any_id");
-    let after_numbers = LONG_NUMBER_RE.replace_all(&after_emails, ":any_id");
-    let s = after_numbers.into_owned();
-    match s.find('?') {
-        Some(pos) => s[..pos].to_string(),
-        None => s,
-    }
-}
-
 /// Parse `content-length: <n>` (case-insensitive), returning the numeric value.
 /// Operates on bytes to avoid panicking on non-UTF-8 char boundaries.
 fn parse_content_length(line: &str) -> Option<u64> {
@@ -604,16 +595,5 @@ fn progress_msg(entries: usize, mem_bytes: usize) -> String {
 }
 
 fn make_progress_bar(file_size: u64) -> ProgressBar {
-    let pb = ProgressBar::new(file_size);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.cyan} [{bar:45.cyan/238}] {percent:>3}%  {msg}  eta {eta}",
-        )
-        .expect("progress template valid")
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        .progress_chars("█▓░"),
-    );
-    pb.set_message("0 hits  0 B in memory");
-    pb.enable_steady_tick(TICK_INTERVAL);
-    pb
+    crate::scanner::make_progress_bar(file_size, "0 hits  0 B in memory")
 }

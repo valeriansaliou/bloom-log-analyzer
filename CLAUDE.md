@@ -1,11 +1,11 @@
-# analgun
+# bloom-log-analyzer
 
 HTTP request log analyzer — written in Rust, designed for huge log files.
 
 ## Quick start
 
 ```bash
-cd analgun
+cd bloom-log-analyzer
 cargo run --release -- /path/to/requests.log
 ```
 
@@ -43,7 +43,7 @@ Only the first line of each entry (`[timestamp] METHOD /url`) is parsed. All oth
 
 ### Library + binary split
 
-`src/lib.rs` exposes the full pipeline as a library (`analgun::run`, `analgun::parser::parse_file`, …). `src/main.rs` is a thin shim that just parses CLI args and calls `analgun::run`. This makes the analysis pipeline reusable and supports `tests/` integration tests.
+`src/lib.rs` exposes the full pipeline as a library (`bloom-log-analyzer::run`, `bloom-log-analyzer::parser::parse_file`, …). `src/main.rs` is a thin shim that just parses CLI args and calls `bloom-log-analyzer::run`. This makes the analysis pipeline reusable and supports `tests/` integration tests.
 
 ## Module layout
 
@@ -145,7 +145,7 @@ Both are replaced with `:any_id` in the normalized URL. The raw identifier strin
 cargo test
 ```
 
-Unit tests live alongside their modules under `#[cfg(test)] mod tests`. There are no integration tests yet — `tests/` is available and would `use analgun::*;` directly thanks to the lib/bin split.
+Unit tests live alongside their modules under `#[cfg(test)] mod tests`. There are no integration tests yet — `tests/` is available and would `use bloom-log-analyzer::*;` directly thanks to the lib/bin split.
 
 ## Constants and tuning
 
