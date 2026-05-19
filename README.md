@@ -34,6 +34,10 @@ cargo build --release
 cargo run --release /path/to/your/bloom-requests.log 
 ```
 
+## Screenshots
+
+![Top 1000 Most Called Routes](https://github.com/user-attachments/assets/bc839e9a-636f-4222-aebb-ecfbe2755c21)
+
 ## Features
 
 As soon as you run `bloom-log-analyzer` on a Bloom requests log file, a quick analysis will be ran, which can take some time.
