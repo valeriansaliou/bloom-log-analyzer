@@ -1,7 +1,7 @@
 Bloom Log Analyzer
 ==================
 
-**Log analysis CLI for Bloom, the REST API caching middleware. It helps you uncover patterns in your Bloom logs.**
+**Log analysis CLI for Bloom, the REST API caching middleware. It helps you uncover patterns in your Bloom request logs (eg. what is hitting my REST API so hard?).**
 
 👉 **Not using Bloom?** [Check out Bloom here](https://github.com/valeriansaliou/bloom).
 
